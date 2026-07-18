@@ -1,0 +1,61 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ESP-IDF Build (log)",
+      "type": "shell",
+      "command": "idf.py",
+      "args": ["build"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "windows": {
+        "command": "cmd",
+        "args": [
+          "/c",
+          "idf.py build 2>&1 | tee build\\build.log"
+        ],
+        "options": {
+          "cwd": "${workspaceFolder}"
+        }
+      }
+    },
+    {
+      "label": "ESP-IDF Flash",
+      "type": "shell",
+      "command": "idf.py",
+      "args": ["flash"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "ESP-IDF Monitor",
+      "type": "shell",
+      "command": "idf.py",
+      "args": ["monitor"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    }
+  ]
+}
