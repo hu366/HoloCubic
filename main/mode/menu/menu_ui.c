@@ -13,6 +13,7 @@
 #include "menu_ui.h"
 #include "app_config.h"
 #include "esp_timer.h"
+#include "pomodoro.h"
 
 /* ================================================================
  *  常量
@@ -64,6 +65,7 @@ static menu_page_t *s_stack[STACK_MAX];
 static int          s_depth = 0;
 static menu_page_creator_t s_creators[MENU_ITEM_COUNT] = {0};
 static int64_t s_sub_tilt_last_us = 0;
+static bool    s_sub_tilt_armed   = true; /* 必须回正才能再次触发 */
 
 /* Core 1 → Core 0 通信 */
 static int  s_btn_pending = -1;  /* -1=无, >=0 按钮被按下 */
@@ -75,7 +77,7 @@ static bool s_focus_dirty = false;
 
 static void refresh(void)        { lv_refr_now(NULL); }
 static int  sw(void)             { return LCD_HOR_RES; }
-static int32_t ease_out(int32_t t, int32_t d) {
+int32_t menu_ui_ease_out(int32_t t, int32_t d) {
     int32_t p = (t * 256) / d; if (p>256) p=256;
     return 256 - ((256-p)*(256-p))/256;
 }
@@ -203,17 +205,42 @@ static void anim_page_slide_reverse(lv_obj_t *slide_out, lv_obj_t *slide_in) {
  * ================================================================ */
 
 static void stack_input_cb(imu_tilt_dir_t tilt, int8_t rotary, bool btn_short) {
-    (void)rotary;
     menu_page_t *pg = page_top();
     if (!pg) return;
 
     if (btn_short) {
-        s_btn_pending = pg->focus_index;  /* Core 0 处理 */
+        s_btn_pending = pg->focus_index;
+        return;
+    }
+
+    int64_t now = esp_timer_get_time();
+
+    /* ---- 旋钮切换（MENU_INPUT_MODE=1 时倾斜已被 menu_engine 过滤掉） ---- */
+    if (rotary != 0) {
+        if (now - s_sub_tilt_last_us < SUB_COOLDOWN_US) return;
+        s_sub_tilt_last_us = now;
+
+        int old = pg->focus_index;
+        if (rotary > 0)
+            pg->focus_index = (pg->focus_index + 1) % pg->btn_count;
+        else
+            pg->focus_index = (pg->focus_index == 0) ? (pg->btn_count - 1) : (pg->focus_index - 1);
+
+        if (pg->focus_index != old) {
+            s_focus_dirty = true;
+            printf("[MENU-UI] focus %d->%d\n", old, pg->focus_index);
+        }
+        return;
+    }
+
+    /* ---- 倾斜切换（MENU_INPUT_MODE=0 时旋钮已被过滤掉） ---- */
+    if (tilt == IMU_TILT_LEVEL) {
+        s_sub_tilt_armed = true;
         return;
     }
     if (tilt != IMU_TILT_FRONT && tilt != IMU_TILT_BACK) return;
+    if (!s_sub_tilt_armed) return;
 
-    int64_t now = esp_timer_get_time();
     if (now - s_sub_tilt_last_us < SUB_COOLDOWN_US) return;
     s_sub_tilt_last_us = now;
 
@@ -225,6 +252,7 @@ static void stack_input_cb(imu_tilt_dir_t tilt, int8_t rotary, bool btn_short) {
 
     if (pg->focus_index != old) {
         s_focus_dirty = true;
+        s_sub_tilt_armed = false;
         printf("[MENU-UI] focus %d->%d\n", old, pg->focus_index);
     }
 }
@@ -324,6 +352,7 @@ void menu_ui_push_page(menu_page_t *page) {
     page_push(page);
     menu_engine_set_sub_callback(stack_input_cb);
     s_sub_tilt_last_us = 0;
+    s_sub_tilt_armed   = true;
     anim_page_slide(prev->container, page->container);
     printf("[MENU-UI] push \"%s\" depth=%d\n", page->title, s_depth);
 }
@@ -351,10 +380,32 @@ void menu_ui_register_creator(menu_item_t item, menu_page_creator_t cb) {
     if (item < MENU_ITEM_COUNT) s_creators[item] = cb;
 }
 
+/* 占位回调：未注册的菜单项显示 "Coming Soon" */
+static void placeholder_back_cb(int index) {
+    if (index == 0) menu_ui_go_back();
+}
+
+static menu_page_t* placeholder_creator(void) {
+    const char *name = s_names[s_carousel_sel];
+    const char *btns[] = {"Back"};
+    menu_page_t *pg = menu_ui_page_create(name, btns, 1, placeholder_back_cb);
+    if (!pg) return NULL;
+
+    lv_obj_t *msg = lv_label_create(pg->container);
+    lv_label_set_text(msg, "Coming Soon");
+    lv_obj_set_style_text_font(msg, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(msg, lv_color_hex(0x666666), 0);
+    lv_obj_set_style_border_width(msg, 0, 0);
+    lv_obj_set_style_bg_opa(msg, LV_OPA_TRANSP, 0);
+    lv_obj_align(msg, LV_ALIGN_CENTER, 0, 0);
+    printf("[MENU-UI] placeholder for \"%s\"\n", name);
+    return pg;
+}
+
 void menu_ui_enter_sub(void) {
     if (!s_screen || s_anim.on) return;
     menu_page_creator_t cb = s_creators[s_carousel_sel];
-    if (!cb) cb = s_creators[0]; /* fallback: 用第一个注册的 */
+    if (!cb) cb = placeholder_creator; /* 未注册的显示占位页 */
     if (!cb) return;
 
     menu_page_t *pg = cb();
@@ -362,6 +413,7 @@ void menu_ui_enter_sub(void) {
     page_push(pg);
     menu_engine_set_sub_callback(stack_input_cb);
     s_sub_tilt_last_us = 0;
+    s_sub_tilt_armed   = true;
     anim_page_slide(s_carousel, pg->container);
     printf("[MENU-UI] enter_sub -> \"%s\"\n", pg->title);
 }
@@ -422,7 +474,7 @@ void menu_ui_tick_anim(void) {
             if (s_anim.cursor) lv_obj_set_y(s_anim.cursor, s_anim.cy_e);
             refresh(); s_anim.on=false; return;
         }
-        int32_t e = ease_out((int32_t)ms, dur);
+        int32_t e = menu_ui_ease_out((int32_t)ms, dur);
         int32_t sy = s_anim.sy_s + ((s_anim.sy_e-s_anim.sy_s)*e)/256;
         int32_t cy = s_anim.cy_s + ((s_anim.cy_e-s_anim.cy_s)*e)/256;
         lv_obj_set_y(s_anim.scroller, sy);
@@ -431,7 +483,7 @@ void menu_ui_tick_anim(void) {
     }
 
     if (ms >= dur) {
-        int32_t e = ease_out(dur, dur);
+        int32_t e = menu_ui_ease_out(dur, dur);
         lv_obj_set_x(s_anim.o1, s_anim.x1s + ((s_anim.x1e-s_anim.x1s)*e)/256);
         lv_obj_set_x(s_anim.o2, s_anim.x2s + ((s_anim.x2e-s_anim.x2s)*e)/256);
         refresh();
@@ -445,7 +497,7 @@ void menu_ui_tick_anim(void) {
         s_anim.on = false; return;
     }
 
-    int32_t e = ease_out((int32_t)ms, dur);
+    int32_t e = menu_ui_ease_out((int32_t)ms, dur);
     lv_obj_set_x(s_anim.o1, s_anim.x1s + ((s_anim.x1e-s_anim.x1s)*e)/256);
     lv_obj_set_x(s_anim.o2, s_anim.x2s + ((s_anim.x2e-s_anim.x2s)*e)/256);
     refresh();
@@ -464,17 +516,39 @@ void menu_ui_apply_sub_updates(void) {
         menu_page_t *pg = page_top();
         if (pg) page_apply_focus(pg, true);
     }
-    /* 按钮按下（Core 0 安全执行回调） */
+    /* 按钮按下（Core 0 安全执行回调）。
+       各页面自行处理 Back（不再由框架硬编码 index 0） */
     if (s_btn_pending >= 0 && !s_anim.on) {
         int idx = s_btn_pending;
         s_btn_pending = -1;
         menu_page_t *pg = page_top();
-        if (idx == 0) {
-            menu_ui_go_back();
-        } else if (pg && pg->on_btn) {
+        if (pg && pg->on_btn) {
             pg->on_btn(idx);  /* Core 0 上下文，可安全操作 LVGL */
         }
     }
+}
+
+/* ================================================================
+ *  聚合初始化（供 main.c 调用）
+ * ================================================================ */
+
+void menu_ui_restore_default_input(void) {
+    menu_engine_set_sub_callback(stack_input_cb);
+}
+
+void menu_ui_init_modules(void) {
+    pomodoro_init();
+    /* 后续模块在此注册：weather_init(); clock_alarm_init(); 等 */
+}
+
+void menu_ui_tick_modules(uint32_t dt_ms) {
+    pomodoro_tick(dt_ms);
+    /* 后续模块：weather_tick(dt_ms); clock_alarm_tick(dt_ms); 等 */
+}
+
+void menu_ui_process_module_updates(void) {
+    pomodoro_process_updates();
+    /* 后续模块：weather_process_updates(); 等 */
 }
 
 /* ================================================================
@@ -482,6 +556,7 @@ void menu_ui_apply_sub_updates(void) {
  * ================================================================ */
 
 static void test_nested_cb(int index) {
+    if (index == 0) { menu_ui_go_back(); return; }
     char title[32];
     snprintf(title, sizeof(title), "Lv%d Btn%d", s_depth+1, index);
     const char *btns[] = {"Back", "Go Deeper"};

@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(idf.py build:*)"
+      "Bash(idf.py build:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(pip list:*)",
+      "Bash(where:*)",
+      "Bash(echo $IDF_PATH)",
+      "Read(//c/Users/djh666/Desktop/demo2/$IDF_PATH/components/**)",
+      "Bash(cmd.exe:*)",
+      "Bash(mount:*)",
+      "WebSearch",
+      "Bash(D:/miniconda3/python.exe:*)"
     ]
   }
 }

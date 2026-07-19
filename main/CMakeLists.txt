@@ -26,8 +26,8 @@ idf_component_register(
         # "mode/pet/pet_engine.c"
         # "mode/pet/pet_anim.c"
         # "mode/pet/pet_ui.c"
-        # --- 菜单子模块（待后续任务） ---
-        # "mode/menu/pomodoro.c"
+        # --- 菜单子模块 ---
+        "mode/menu/pomodoro.c"
         # "mode/menu/weather.c"
         # "mode/menu/clock_alarm.c"
         # "mode/menu/music_player.c"

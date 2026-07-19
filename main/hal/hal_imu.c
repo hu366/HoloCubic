@@ -186,11 +186,27 @@ imu_tilt_dir_t hal_imu_get_tilt_dir(void)
     float r = s_last_roll;
     float t = IMU_TILT_THRESHOLD_DEG;
 
-    if      (r < -t) return IMU_TILT_FRONT;
-    else if (r >  t) return IMU_TILT_BACK;
-    else if (p >  t) return IMU_TILT_LEFT;
-    else if (p < -t) return IMU_TILT_RIGHT;
-    return IMU_TILT_LEVEL;
+    imu_tilt_dir_t raw;
+    if      (r < -t) raw = IMU_TILT_FRONT;
+    else if (r >  t) raw = IMU_TILT_BACK;
+    else if (p >  t) raw = IMU_TILT_LEFT;
+    else if (p < -t) raw = IMU_TILT_RIGHT;
+    else             raw = IMU_TILT_LEVEL;
+
+    /* 去抖：方向必须连续 3 帧不变（60ms @ 50Hz）才算有效。
+       拍打/撞击的加速度尖峰通常只持续 1~2 帧，会被过滤掉。 */
+    #define TILT_DEBOUNCE 3
+    static imu_tilt_dir_t s_last_raw = IMU_TILT_LEVEL;
+    static int            s_stable   = 0;
+
+    if (raw == s_last_raw) {
+        if (s_stable < TILT_DEBOUNCE) s_stable++;
+    } else {
+        s_last_raw = raw;
+        s_stable = 1;
+    }
+
+    return (s_stable >= TILT_DEBOUNCE) ? raw : IMU_TILT_LEVEL;
 }
 
 imu_shake_dir_t hal_imu_get_shake_dir(void)

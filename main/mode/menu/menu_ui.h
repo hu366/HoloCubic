@@ -108,6 +108,25 @@ void menu_ui_apply_sub_updates(void);
 /** 注册默认可嵌套测试页面 */
 void menu_ui_test_nested(void);
 
+/* ================================================================
+ *  聚合初始化（供 main.c 调用，避免每个模块单独 init）
+ * ================================================================ */
+
+/** 初始化所有菜单子模块（pomodoro/weather/clock 等） */
+void menu_ui_init_modules(void);
+
+/** logic_task 每秒调用（纯数据 tick，不操作 LVGL） */
+void menu_ui_tick_modules(uint32_t dt_ms);
+
+/** lvgl_task 每帧调用（统一处理子模块 LVGL 更新 + 待处理的 tick） */
+void menu_ui_process_module_updates(void);
+
+/** 恢复默认子页面输入回调（调整模式结束后用） */
+void menu_ui_restore_default_input(void);
+
+/** ease-out 缓动函数（0→256），供各模块动画使用 */
+int32_t menu_ui_ease_out(int32_t t_ms, int32_t duration_ms);
+
 #ifdef __cplusplus
 }
 #endif

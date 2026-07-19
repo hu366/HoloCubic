@@ -60,7 +60,7 @@ static void lvgl_task(void *arg)
 
     /* ---- 默认加载 MENU 页面（mode_manager 初始化为 MODE_MENU） ---- */
     menu_ui_init();
-    menu_ui_test_nested();  /* 注册嵌套测试页面 */
+    menu_ui_init_modules();  /* 聚合初始化所有子模块（pomodoro 等） */
     lv_screen_load(menu_ui_get_screen());
     lv_refr_now(NULL);
 
@@ -95,6 +95,7 @@ static void lvgl_task(void *arg)
             } else {
                 /* 切换到 MENU 模式 */
                 menu_ui_init();
+                menu_ui_init_modules();  /* 重新注册所有子模块创建器 */
                 lv_screen_load(menu_ui_get_screen());
                 lv_refr_now(NULL);
                 menu_ui_active  = true;
@@ -136,6 +137,11 @@ static void lvgl_task(void *arg)
         /* 手动驱动菜单滑动动画（必须在 lv_timer_handler 之前） */
         if (cur_mode == MODE_MENU && menu_ui_active) {
             menu_ui_tick_anim();
+        }
+
+        /* 处理子模块更新（番茄钟 tick 等，Core 0 安全） */
+        if (cur_mode == MODE_MENU && menu_ui_active) {
+            menu_ui_process_module_updates();
         }
 
         /* LVGL 渲染一帧 */
@@ -206,13 +212,26 @@ static void network_task(void *arg)
 }
 
 /* ================================================================
- *  logic_task —— 桩
+ *  logic_task —— 每秒 tick 各模块逻辑（番茄钟/闹钟/电池 等）
  * ================================================================ */
 static void logic_task(void *arg)
 {
     (void)arg;
+    uint32_t tick_accum = 0;
+    int64_t  last_us    = esp_timer_get_time();
+
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        int64_t  now_us = esp_timer_get_time();
+        uint32_t dt_ms  = (uint32_t)((now_us - last_us) / 1000);
+        last_us = now_us;
+
+        tick_accum += dt_ms;
+        if (tick_accum >= 1000) {
+            tick_accum -= 1000;
+            menu_ui_tick_modules(1000);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(LOGIC_TICK_PERIOD_MS));
     }
 }
 

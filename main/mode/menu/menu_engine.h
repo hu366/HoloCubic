@@ -69,6 +69,9 @@ void menu_engine_set_sub_callback(menu_sub_cb_t cb);
 /** menu_ui 页面栈清空后调用，通知 engine 回到 TOP */
 void menu_engine_go_back(void);
 
+/** 强制放行旋钮（番茄钟调节模式用），传 false 恢复 MENU_INPUT_MODE 过滤 */
+void menu_engine_rotary_override(bool force);
+
 #ifdef __cplusplus
 }
 #endif
