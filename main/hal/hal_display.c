@@ -73,7 +73,7 @@ static void panel_init(void)
     /* ---- ST7789 面板设备 ---- */
     esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = LCD_PIN_RST,
-        .rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_BGR,  // ST7789 默认 BGR 色序
+        .rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB,  // 配合 swap_color_bytes 使用 RGB
         .bits_per_pixel = 16,                          // RGB565
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(s_io_handle, &panel_cfg, &s_panel));
@@ -82,15 +82,22 @@ static void panel_init(void)
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
 
-    /* ---- 开显示（退出睡眠模式） ---- */
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
+    /*
+     * 行列偏移：ST7789 原生 GRAM 为 240×320，本模组物理像素仅 240×240，
+     * 对应 GRAM 第 80~319 行（底部 240 行）。gap_y=80 使 RASET 偏移，
+     * 确保像素数据写入正确的 GRAM 区域。
+     */
+    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(s_panel, LCD_GAP_X, LCD_GAP_Y));
+
+    /* ---- 颜色反转（ST7789 通常需要，须在开显示前设置） ---- */
+    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, true));
 
     /* ---- 镜像翻转（全息棱镜适配） ---- */
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, MIRROR_X, MIRROR_Y));
     ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(s_panel, false));   // 不交换 XY，竖屏
 
-    /* ---- 颜色反转（ST7789 通常需要） ---- */
-    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, true));
+    /* ---- 开显示（退出睡眠模式） ---- */
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
 
     ESP_LOGI(TAG, "ST7789 panel initialized (240x240, RGB565, 40MHz SPI)");
 }
@@ -194,6 +201,16 @@ void hal_display_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_ma
 
     int w = area->x2 - area->x1 + 1;
     int h = area->y2 - area->y1 + 1;
+    int px_count = w * h;
+
+    /* 字节交换：ESP32 little-endian 下 RGB565 高低字节反了，ST7789 需 MSB 在前 */
+    uint8_t *px = px_map;
+    for (int i = 0; i < px_count; i++) {
+        uint8_t tmp = px[0];
+        px[0] = px[1];
+        px[1] = tmp;
+        px += 2;
+    }
 
     esp_lcd_panel_draw_bitmap(s_panel,
                               area->x1, area->y1,

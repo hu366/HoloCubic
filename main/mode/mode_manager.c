@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include "mode_manager.h"
+#include "menu/menu_engine.h"
 
 /* ----------------------------------------------------------------
  *  内部状态
@@ -46,14 +47,19 @@ static const char *shake_str(imu_shake_dir_t d)
 
 void mode_manager_init(void)
 {
-    s_current_mode = MODE_PET;
-    printf("[MM] 初始化完成，当前模式: PET\n");
+    s_current_mode = MODE_MENU;  /* 默认进入 MENU 模式（开发测试阶段） */
+    menu_engine_init();
+    printf("[MM] 初始化完成，当前模式: MENU\n");
 }
 
 void mode_manager_on_rotary(int8_t step)
 {
-    printf("[MM] 收到: %s / 旋钮 %+d 步\n",
-           mode_str(s_current_mode), step);
+    if (s_current_mode == MODE_MENU) {
+        menu_engine_on_rotary(step);
+    } else {
+        printf("[MM] 收到: %s / 旋钮 %+d 步\n",
+               mode_str(s_current_mode), step);
+    }
 }
 
 void mode_manager_on_btn(bool short_press)
@@ -62,8 +68,13 @@ void mode_manager_on_btn(bool short_press)
         /* 长按 → 切换模式 */
         s_current_mode = (s_current_mode == MODE_PET) ? MODE_MENU : MODE_PET;
         s_last_tilt_dir = (imu_tilt_dir_t)-1;
+        if (s_current_mode == MODE_MENU) {
+            menu_engine_init();   /* 进入 MENU 模式时重置菜单状态 */
+        }
         printf("[MM] 收到: 按键-长按 → 切换模式 → %s\n",
                mode_str(s_current_mode));
+    } else if (s_current_mode == MODE_MENU) {
+        menu_engine_on_btn(true);
     } else {
         printf("[MM] 收到: %s / 按键-短按\n", mode_str(s_current_mode));
     }
@@ -75,26 +86,38 @@ void mode_manager_on_tilt(imu_angles_t angles, imu_tilt_dir_t dir)
     if (dir == s_last_tilt_dir) return;
     s_last_tilt_dir = dir;
 
-    printf("[MM] 收到: %s / 倾斜-%s, pitch=%+.1f° roll=%+.1f°\n",
-           mode_str(s_current_mode), tilt_str(dir),
-           angles.pitch, angles.roll);
+    if (s_current_mode == MODE_MENU) {
+        menu_engine_on_tilt(dir);
+    } else {
+        printf("[MM] 收到: %s / 倾斜-%s, pitch=%+.1f° roll=%+.1f°\n",
+               mode_str(s_current_mode), tilt_str(dir),
+               angles.pitch, angles.roll);
+    }
 }
 
 void mode_manager_on_shake(imu_shake_dir_t dir)
 {
+    /* MENU 模式不需要摇晃检测 */
+    if (s_current_mode == MODE_MENU) return;
+
     printf("[MM] 收到: %s / 摇晃-%s\n",
            mode_str(s_current_mode), shake_str(dir));
 }
 
 void mode_manager_tick(uint32_t dt_ms)
 {
-    /* 每 5 秒打印一次 */
+    /* 每 5 秒打印一次（PET 模式） */
     s_tick_counter++;
-    if (s_tick_counter < 5) return;
-    s_tick_counter = 0;
-
-    printf("[MM] 收到: %s / 心跳 %lums\n",
-           mode_str(s_current_mode), (unsigned long)(dt_ms * 5));
+    if (s_tick_counter >= 5) {
+        s_tick_counter = 0;
+        if (s_current_mode != MODE_MENU) {
+            printf("[MM] 收到: %s / 心跳 %lums\n",
+                   mode_str(s_current_mode), (unsigned long)(dt_ms * 5));
+        }
+    }
+    if (s_current_mode == MODE_MENU) {
+        menu_engine_tick(dt_ms);
+    }
 }
 
 app_mode_t mode_manager_get_mode(void)

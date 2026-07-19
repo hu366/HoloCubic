@@ -5,7 +5,7 @@ idf_component_register(
         # --- HAL 层 ---
         "hal/hal_touch_encoder.c"
         "hal/hal_imu.c"
-        # "hal/hal_display.c"
+        "hal/hal_display.c"
         # "hal/hal_audio.c"
         # "hal/hal_sd.c"
         # "hal/hal_battery.c"
@@ -19,13 +19,14 @@ idf_component_register(
         # "service/svc_power.c"
         # --- 模式管理器 ---
         "mode/mode_manager.c"
+        # --- 菜单模式 ---
+        "mode/menu/menu_engine.c"
+        "mode/menu/menu_ui.c"
         # --- 宠物模式 ---
         # "mode/pet/pet_engine.c"
         # "mode/pet/pet_anim.c"
         # "mode/pet/pet_ui.c"
-        # --- 菜单模式 ---
-        # "mode/menu/menu_engine.c"
-        # "mode/menu/menu_ui.c"
+        # --- 菜单子模块（待后续任务） ---
         # "mode/menu/pomodoro.c"
         # "mode/menu/weather.c"
         # "mode/menu/clock_alarm.c"
@@ -35,9 +36,14 @@ idf_component_register(
         "."
         "hal"
         "mode"
+        "mode/menu"
     REQUIRES
         esp_driver_gpio
         esp_driver_pcnt
         esp_driver_i2c
+        esp_driver_spi
+        esp_driver_ledc
+        esp_lcd
         esp_timer
+        lvgl
 )
