@@ -6,7 +6,7 @@
 
 | 器件 | 型号 |
 |------|------|
-| 主控 | Waveshare ESP32-S3-Zero (4MB Flash / 4MB PSRAM) |
+| 主控 | Waveshare ESP32-S3-Zero (8MB Flash / 8MB PSRAM) |
 | 屏幕 | ST7789 1.54" 240×240 (N154-2424KBWPG05-H12) |
 | IMU | MPU6050 (I2C, ±4g) |
 | 编码器 | EC11 旋转编码器 + 按键 |
