@@ -360,7 +360,7 @@ static menu_page_t* pomo_creator(void) {
     /* ---- 标题 ---- */
     pg->title_label = lv_label_create(pg->container);
     lv_label_set_text(pg->title_label, "Pomodoro");
-    lv_obj_set_style_text_font(pg->title_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(pg->title_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(pg->title_label, lv_color_white(), 0);
     lv_obj_set_style_border_width(pg->title_label, 0, 0);
     lv_obj_set_style_bg_opa(pg->title_label, LV_OPA_TRANSP, 0);
@@ -383,7 +383,7 @@ static menu_page_t* pomo_creator(void) {
 
     /* ---- 倒计时文字（叠在弧中央） ---- */
     s_time_label = lv_label_create(pg->container);
-    lv_obj_set_style_text_font(s_time_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(s_time_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s_time_label, lv_color_white(), 0);
     lv_obj_set_style_border_width(s_time_label, 0, 0);
     lv_obj_set_style_bg_opa(s_time_label, LV_OPA_TRANSP, 0);

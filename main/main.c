@@ -1,6 +1,6 @@
 /**
  * @file    main.c
- * @brief   Task 14: 入口 —— 初始化流程 + 6 FreeRTOS 任务 + MENU UI 集成
+ * @brief   入口 —— 初始化流程 + 6 FreeRTOS 任务 + 模式切换
  *
  * 初始化顺序：
  *   lv_init → hal_display → hal_imu → hal_touch_encoder
@@ -8,7 +8,7 @@
  *
  * 6 个 FreeRTOS 任务：
  *   lvgl(3/12288/0) sensor(4/4096/1)  encoder(5/3072/0)
- *   audio(2/4096/1) network(1/6144/1) logic(2/4096/0)
+ *   audio(2/4096/1) network(1/6144/1) logic(2/12288/0)
  *
  * lvgl_task 内轮询 mode_manager + menu_engine 状态并驱动 menu_ui 更新。
  */
@@ -26,6 +26,7 @@
 #include "mode/mode_manager.h"
 #include "mode/menu/menu_engine.h"
 #include "mode/menu/menu_ui.h"
+#include "svc_wifi.h"
 
 /* ================================================================
  *  回调：编码器 → mode_manager
@@ -86,7 +87,7 @@ static void lvgl_task(void *arg)
                     lv_obj_t *pl = lv_label_create(pet_screen);
                     lv_label_set_text(pl, "PET");
                     lv_obj_set_style_text_color(pl, lv_color_white(), 0);
-                    lv_obj_set_style_text_font(pl, &lv_font_montserrat_24, 0);
+                    lv_obj_set_style_text_font(pl, &lv_font_montserrat_14, 0);
                     lv_obj_center(pl);
                 }
                 lv_screen_load(pet_screen);
@@ -259,8 +260,9 @@ void app_main(void)
     hal_touch_encoder_init(on_encoder_rotate, on_encoder_btn);
     printf("[INIT] hal_touch_encoder_init() done\n");
 
-    /* ---- 5. 服务层（桩） ---- */
-    printf("[INIT] service layer (stubs)\n");
+    /* ---- 5. 服务层 ---- */
+    svc_wifi_init();
+    printf("[INIT] svc_wifi_init() done\n");
 
     /* ---- 6. 模式管理器 ---- */
     mode_manager_init();
@@ -284,7 +286,7 @@ void app_main(void)
     ret = xTaskCreatePinnedToCore(network_task, "network", 6144, NULL, 1, NULL, 1);
     printf("[TASK] network_task create: %s\n", ret == pdPASS ? "OK" : "FAIL");
 
-    ret = xTaskCreatePinnedToCore(logic_task,   "logic",   4096, NULL, 2, NULL, 0);
+    ret = xTaskCreatePinnedToCore(logic_task,   "logic",   12288, NULL, 2, NULL, 0);
     printf("[TASK] logic_task   create: %s\n", ret == pdPASS ? "OK" : "FAIL");
 
     printf("\n[INIT] All 6 tasks created\n");

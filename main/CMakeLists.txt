@@ -10,9 +10,6 @@ idf_component_register(
         # "hal/hal_sd.c"
         # "hal/hal_battery.c"
         # "hal/hal_rtc.c"
-        # --- 服务层 ---
-        # "service/svc_wifi.c"
-        # "service/svc_http.c"
         # "service/svc_sntp.c"
         # "service/svc_persistence.c"
         # "service/svc_volume.c"
@@ -26,9 +23,12 @@ idf_component_register(
         # "mode/pet/pet_engine.c"
         # "mode/pet/pet_anim.c"
         # "mode/pet/pet_ui.c"
+        # --- 服务层 ---
+        "service/svc_wifi.c"
+        "service/svc_http.c"
         # --- 菜单子模块 ---
         "mode/menu/pomodoro.c"
-        # "mode/menu/weather.c"
+        "mode/menu/weather.c"
         # "mode/menu/clock_alarm.c"
         # "mode/menu/music_player.c"
         # "mode/menu/animation_board.c"
@@ -37,6 +37,7 @@ idf_component_register(
         "hal"
         "mode"
         "mode/menu"
+        "service"
     REQUIRES
         esp_driver_gpio
         esp_driver_pcnt
@@ -45,5 +46,11 @@ idf_component_register(
         esp_driver_ledc
         esp_lcd
         esp_timer
+        esp_wifi
+        esp_netif
+        nvs_flash
+        esp_event
+        esp_http_client
+        cjson
         lvgl
 )

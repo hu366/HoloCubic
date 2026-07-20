@@ -124,12 +124,15 @@ extern "C" {
 #define POMODORO_BREAK_MAX      99
 
 /* ================================================================
- *  10. 天气 API
+ *  10. 天气 API（心知天气 v3）
+ *     免费用户返回：天气现象文字(text) + 天气代码(code) + 温度(temperature)
+ *     https://api.seniverse.com/v3/weather/now.json
  * ================================================================ */
-// 请替换为实际 API Key 与城市代码
-#define WEATHER_API_URL \
-    "http://api.openweathermap.org/data/2.5/weather?q=Shanghai&appid=YOUR_API_KEY&units=metric&lang=zh_cn"
-#define WEATHER_UPDATE_INTERVAL_MS  (30 * 60 * 1000)  // 30 分钟刷新一次
+#define WEATHER_API_KEY     "SFCBDWLOzbVENJO-6"  // 心知天气 API 私钥（非公钥！公钥是给前端 JS 用的）
+#define WEATHER_API_LOCATION "guangzhou"           // 回退位置（公网 IP 检测失败时使用）
+#define WEATHER_API_URL_FMT \
+    "http://api.seniverse.com/v3/weather/now.json?key=%s&location=%s&language=en&unit=c"
+#define WEATHER_UPDATE_INTERVAL_MS  (30 * 60 * 1000)  // 30 分钟刷新一次（免费用户合理频率）
 #define WEATHER_HTTP_TIMEOUT_MS     10000              // HTTP 超时
 #define WEATHER_STALE_MS            (60 * 60 * 1000)   // 数据过期阈值 1h
 
@@ -160,6 +163,8 @@ extern "C" {
 /* ================================================================
  *  14. Wi-Fi
  * ================================================================ */
+#define WIFI_DEFAULT_SSID    "天国拯救2077"       // 替换为实际 SSID
+#define WIFI_DEFAULT_PASS    "woyoumima"      // 替换为实际密码（为空则开放网络）
 #define WIFI_CONNECT_RETRY_MAX      3
 #define WIFI_CONNECT_RETRY_INTERVAL_MS  5000
 #define WIFI_SCAN_METHOD     WIFI_ALL_CHANNEL_SCAN
@@ -171,7 +176,7 @@ extern "C" {
  * ================================================================ */
 #define MENU_SCROLL_COOLDOWN_MS  300  /* 两次切换的最小间隔 */
 /* 主菜单切换方式：0=仅倾斜  1=仅旋钮  2=倾斜+旋钮 */
-#define MENU_INPUT_MODE  1
+#define MENU_INPUT_MODE  2
 
 /* ================================================================
  *  16. LVGL draw buffer（PSRAM 双缓冲）

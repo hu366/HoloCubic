@@ -14,6 +14,7 @@
 #include "app_config.h"
 #include "esp_timer.h"
 #include "pomodoro.h"
+#include "weather.h"
 
 /* ================================================================
  *  常量
@@ -105,7 +106,7 @@ static lv_obj_t* make_carousel(int idx, int x) {
 
     lv_obj_t *t = lv_label_create(c);
     lv_label_set_text(t, s_names[idx]);
-    lv_obj_set_style_text_font(t, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(t, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(t, lv_color_white(), 0);
     lbl_style(t); lv_obj_center(t);
 
@@ -282,7 +283,7 @@ menu_page_t* menu_ui_page_create(const char *title,
 
     pg->title_label = lv_label_create(pg->container);
     lv_label_set_text(pg->title_label, title);
-    lv_obj_set_style_text_font(pg->title_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(pg->title_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(pg->title_label, lv_color_white(), 0);
     lbl_style(pg->title_label);
     lv_obj_align(pg->title_label, LV_ALIGN_TOP_MID, 0, 10);
@@ -538,17 +539,20 @@ void menu_ui_restore_default_input(void) {
 
 void menu_ui_init_modules(void) {
     pomodoro_init();
-    /* 后续模块在此注册：weather_init(); clock_alarm_init(); 等 */
+    weather_init();
+    /* 后续模块：clock_alarm_init(); 等 */
 }
 
 void menu_ui_tick_modules(uint32_t dt_ms) {
     pomodoro_tick(dt_ms);
-    /* 后续模块：weather_tick(dt_ms); clock_alarm_tick(dt_ms); 等 */
+    weather_tick(dt_ms);
+    /* 后续模块：clock_alarm_tick(dt_ms); 等 */
 }
 
 void menu_ui_process_module_updates(void) {
     pomodoro_process_updates();
-    /* 后续模块：weather_process_updates(); 等 */
+    weather_process_updates();
+    /* 后续模块：clock_alarm_process_updates(); 等 */
 }
 
 /* ================================================================
