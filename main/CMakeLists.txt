@@ -7,7 +7,7 @@ idf_component_register(
         "hal/hal_imu.c"
         "hal/hal_display.c"
         # "hal/hal_audio.c"
-        # "hal/hal_sd.c"
+        "hal/hal_sd.c"
         # "hal/hal_battery.c"
         "hal/hal_rtc.c"
         # --- 模式管理器 ---
@@ -43,6 +43,7 @@ idf_component_register(
         esp_driver_pcnt
         esp_driver_i2c
         esp_driver_spi
+        esp_driver_sdspi
         esp_driver_ledc
         esp_lcd
         esp_timer
@@ -51,6 +52,8 @@ idf_component_register(
         nvs_flash
         esp_event
         esp_http_client
+        sdmmc
+        fatfs
         cjson
         lvgl
 )

@@ -29,6 +29,7 @@
 #include "svc_wifi.h"
 #include "svc_sntp.h"
 #include "hal/hal_rtc.h"
+#include "hal/hal_sd.h"
 
 /* ================================================================
  *  回调：编码器 → mode_manager

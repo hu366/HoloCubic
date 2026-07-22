@@ -71,10 +71,10 @@ extern "C" {
  *  5. SD 卡 (SPI3)
  * ================================================================ */
 #define SD_SPI_HOST         SPI3_HOST
-#define SD_PIN_SCLK         21
-#define SD_PIN_MOSI         14
+#define SD_PIN_SCLK         4
+#define SD_PIN_MOSI         7
 #define SD_PIN_MISO         3       // 避开 LCD SCLK (GPIO13)
-#define SD_PIN_CS           7
+#define SD_PIN_CS           13
 #define SD_MOUNT_POINT      "/sdcard"
 #define SD_MAX_FILES_OPEN   4
 
