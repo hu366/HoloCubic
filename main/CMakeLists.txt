@@ -9,11 +9,7 @@ idf_component_register(
         # "hal/hal_audio.c"
         # "hal/hal_sd.c"
         # "hal/hal_battery.c"
-        # "hal/hal_rtc.c"
-        # "service/svc_sntp.c"
-        # "service/svc_persistence.c"
-        # "service/svc_volume.c"
-        # "service/svc_power.c"
+        "hal/hal_rtc.c"
         # --- 模式管理器 ---
         "mode/mode_manager.c"
         # --- 菜单模式 ---
@@ -26,10 +22,14 @@ idf_component_register(
         # --- 服务层 ---
         "service/svc_wifi.c"
         "service/svc_http.c"
+        "service/svc_sntp.c"
+        # "service/svc_persistence.c"
+        # "service/svc_volume.c"
+        # "service/svc_power.c"
         # --- 菜单子模块 ---
         "mode/menu/pomodoro.c"
         "mode/menu/weather.c"
-        # "mode/menu/clock_alarm.c"
+        "mode/menu/clock_alarm.c"
         # "mode/menu/music_player.c"
         # "mode/menu/animation_board.c"
     INCLUDE_DIRS

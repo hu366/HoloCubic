@@ -42,7 +42,7 @@ extern "C" {
 #define ENCODER_PIN_A       9       // 按钮 A
 #define ENCODER_PIN_B       10      // 按钮 B
 #define ENCODER_PIN_BTN     8       // 按钮 端
-#define ENCODER_BTN_DEBOUNCE_MS    30
+#define ENCODER_BTN_DEBOUNCE_MS    10    /* 10ms: 快速短按更灵敏 */
 #define ENCODER_BTN_LONG_PRESS_MS  800     // 长按判定阈值
 
 /* ================================================================

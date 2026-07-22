@@ -15,6 +15,7 @@
 #include "esp_timer.h"
 #include "pomodoro.h"
 #include "weather.h"
+#include "clock_alarm.h"
 
 /* ================================================================
  *  常量
@@ -540,19 +541,19 @@ void menu_ui_restore_default_input(void) {
 void menu_ui_init_modules(void) {
     pomodoro_init();
     weather_init();
-    /* 后续模块：clock_alarm_init(); 等 */
+    clock_alarm_init();
 }
 
 void menu_ui_tick_modules(uint32_t dt_ms) {
     pomodoro_tick(dt_ms);
     weather_tick(dt_ms);
-    /* 后续模块：clock_alarm_tick(dt_ms); 等 */
+    clock_alarm_tick(dt_ms);
 }
 
 void menu_ui_process_module_updates(void) {
     pomodoro_process_updates();
     weather_process_updates();
-    /* 后续模块：clock_alarm_process_updates(); 等 */
+    clock_alarm_process_updates();
 }
 
 /* ================================================================

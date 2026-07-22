@@ -27,6 +27,8 @@
 #include "mode/menu/menu_engine.h"
 #include "mode/menu/menu_ui.h"
 #include "svc_wifi.h"
+#include "svc_sntp.h"
+#include "hal/hal_rtc.h"
 
 /* ================================================================
  *  回调：编码器 → mode_manager
@@ -207,8 +209,25 @@ static void audio_task(void *arg)
 static void network_task(void *arg)
 {
     (void)arg;
+    bool synced = false;
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(3000));
+
+        if (!svc_wifi_is_connected()) continue;
+
+        if (!synced) {
+            svc_sntp_init();
+            svc_sntp_sync();
+            if (svc_sntp_is_synced()) {
+                synced = true;
+                /* 设置时区为北京时间（UTC+8） */
+                setenv("TZ", "CST-8", 1);
+                tzset();
+                /* 同步成功后写 RTC */
+                hal_rtc_set_time(time(NULL));
+                printf("[NETWORK] SNTP synced, RTC saved\n");
+            }
+        }
     }
 }
 
@@ -263,6 +282,8 @@ void app_main(void)
     /* ---- 5. 服务层 ---- */
     svc_wifi_init();
     printf("[INIT] svc_wifi_init() done\n");
+    hal_rtc_init();
+    printf("[INIT] hal_rtc_init() done\n");
 
     /* ---- 6. 模式管理器 ---- */
     mode_manager_init();
