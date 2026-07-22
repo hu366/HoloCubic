@@ -16,7 +16,7 @@ idf_component_register(
         "mode/menu/menu_engine.c"
         "mode/menu/menu_ui.c"
         # --- 宠物模式 ---
-        # "mode/pet/pet_engine.c"
+        "mode/pet/pet_engine.c"
         # "mode/pet/pet_anim.c"
         # "mode/pet/pet_ui.c"
         # --- 服务层 ---
@@ -37,6 +37,7 @@ idf_component_register(
         "hal"
         "mode"
         "mode/menu"
+        "mode/pet"
         "service"
     REQUIRES
         esp_driver_gpio
