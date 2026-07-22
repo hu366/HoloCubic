@@ -107,6 +107,11 @@ static void panel_init(void)
  * ================================================================ */
 static void backlight_init(void)
 {
+    if (LCD_PIN_BACKLIGHT < 0) {
+        ESP_LOGI(TAG, "Backlight skipped (pin not connected)");
+        return;
+    }
+
     ledc_timer_config_t ledc_timer = {
         .speed_mode       = LEDC_LOW_SPEED_MODE,
         .duty_resolution  = LEDC_TIMER_10_BIT,   // 0~1023

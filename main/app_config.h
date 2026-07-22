@@ -18,12 +18,12 @@ extern "C" {
  *    屏幕：240×240，驱动 IC ST7789
  * ================================================================ */
 #define LCD_SPI_HOST        SPI2_HOST
-#define LCD_PIN_SCLK        13      // SPI 时钟
-#define LCD_PIN_MOSI        12      // SPI 主出从入
-#define LCD_PIN_DC          10      // 数据/命令选择
-#define LCD_PIN_RST         11      // 复位
-#define LCD_PIN_CS          9       // 片选
-#define LCD_PIN_BACKLIGHT   8      // 背光（PWM 可控）
+#define LCD_PIN_SCLK        12      // SPI 时钟
+#define LCD_PIN_MOSI        11      // SPI 主出从入
+#define LCD_PIN_DC          5       // 数据/命令选择
+#define LCD_PIN_RST         GPIO_NUM_NC  // 复位（不接）
+#define LCD_PIN_CS          6       // 片选
+#define LCD_PIN_BACKLIGHT   GPIO_NUM_NC  // 背光（不接）
 #define LCD_HOR_RES         240
 #define LCD_VER_RES         240
 #define LCD_PIXEL_CLOCK_MHZ 40      // SPI 像素时钟
@@ -39,9 +39,9 @@ extern "C" {
 /* ================================================================
  *  2. 旋转编码器 (GPIO + PCNT)
  * ================================================================ */
-#define ENCODER_PIN_A       4       // PCNT 脉冲 A 相
-#define ENCODER_PIN_B       5       // PCNT 脉冲 B 相
-#define ENCODER_PIN_BTN     6       // 按键（带上拉）
+#define ENCODER_PIN_A       9       // 按钮 A
+#define ENCODER_PIN_B       10      // 按钮 B
+#define ENCODER_PIN_BTN     8       // 按钮 端
 #define ENCODER_BTN_DEBOUNCE_MS    30
 #define ENCODER_BTN_LONG_PRESS_MS  800     // 长按判定阈值
 
@@ -128,9 +128,8 @@ extern "C" {
  *     免费用户返回：天气现象文字(text) + 天气代码(code) + 温度(temperature)
  *     https://api.seniverse.com/v3/weather/now.json
  * ================================================================ */
-#define WEATHER_API_KEY     "SFCBDWLOzbVENJO-6"  // 心知天气 API 私钥（非公钥！公钥是给前端 JS 用的）
-#define IP2LOCATION_API_KEY  "8E921DAF152368E2C8831DBC2F41C1C9"  // IP2Location.io 免费 Key
-#define WEATHER_API_LOCATION "shenzhen"           // 回退位置（公网 IP 检测失败时使用）
+#define WEATHER_API_KEY     "SFCBDWLOzbVENJO-6"  // 心知天气 API 私钥
+#define WEATHER_DEFAULT_CITY 0                    // 默认城市索引（城市列表见 weather.c）
 #define WEATHER_API_URL_FMT \
     "http://api.seniverse.com/v3/weather/now.json?key=%s&location=%s&language=en&unit=c"
 #define WEATHER_UPDATE_INTERVAL_MS  (30 * 60 * 1000)  // 30 分钟刷新一次（免费用户合理频率）
@@ -177,7 +176,7 @@ extern "C" {
  * ================================================================ */
 #define MENU_SCROLL_COOLDOWN_MS  300  /* 两次切换的最小间隔 */
 /* 主菜单切换方式：0=仅倾斜  1=仅旋钮  2=倾斜+旋钮 */
-#define MENU_INPUT_MODE  2
+#define MENU_INPUT_MODE  1
 
 /* ================================================================
  *  16. LVGL draw buffer（PSRAM 双缓冲）

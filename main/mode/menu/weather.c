@@ -2,7 +2,7 @@
  * @file    weather.c
  * @brief   天气模块 —— 心知天气 API v3 + cJSON 解析 + LVGL 展示
  *
- * 请求流程：公网 IP 查询(多源回退) → 心知天气 API → cJSON 解析 → LVGL 展示
+ * 用户从预设城市列表中手动选择城市，直接查询心知天气 API。
  * 免费用户返回：location.name / now.text / now.code / now.temperature
  *
  * 跨核安全：
@@ -39,10 +39,46 @@ static lv_obj_t      *s_desc_label;
 static lv_obj_t      *s_status_label;  /* "Not Connected" / "Loading..." / "" */
 static lv_obj_t      *s_btn_label;
 static lv_obj_t      *s_btn_bg;
-static int            s_btn_index;     /* 0=Refresh 1=Back */
+static int            s_btn_index;     /* 0=City 1=Refresh 2=Back */
 static uint32_t       s_fetch_timer_ms;
 static bool           s_has_data;
 static bool           s_fetching;
+
+/* 预设城市列表（心知天气 city pinyin） */
+static const char* const CITY_LIST[] = {
+    "guangzhou", "shenzhen", "beijing", "shanghai",
+    "chengdu",  "hangzhou", "wuhan",   "nanjing",
+};
+#define CITY_COUNT  ((int)(sizeof(CITY_LIST) / sizeof(CITY_LIST[0])))
+static int s_city_index;               /* 当前城市索引 */
+#define BTN_COUNT 3
+
+/* 城市显示名（首字母大写拼音，仅拉丁字体可用） */
+static const char* const CITY_DISPLAY[] = {
+    "Guangzhou", "Shenzhen", "Beijing", "Shanghai",
+    "Chengdu",  "Hangzhou", "Wuhan",   "Nanjing",
+};
+
+/* ---- 城市选择弹窗 ---- */
+static bool     s_city_select;          /* 弹窗模式激活 */
+static int      s_city_sel_idx;         /* 高亮索引 (0..7=城市, 8=Cancel) */
+static volatile bool s_popup_dirty;     /* Core1→Core0: 高亮需更新 */
+static int64_t  s_city_tilt_last_us;    /* 弹窗内旋钮防抖 */
+static lv_obj_t *s_popup_overlay;       /* 半透明遮罩 */
+static lv_obj_t *s_popup_scroller;      /* 滚动容器 */
+static lv_obj_t *s_popup_items[9];      /* 8城市 + Cancel */
+static lv_obj_t *s_popup_cursor;        /* 高亮游标 */
+#define POPUP_W         190
+#define POPUP_H         170
+#define ITEM_H          24
+#define ITEM_GAP        2
+#define ITEM_STEP       (ITEM_H + ITEM_GAP)
+#define VISIBLE_ITEMS   5
+#define VP_H            (VISIBLE_ITEMS * ITEM_STEP - ITEM_GAP)
+#define VP_W            (POPUP_W - 12)
+#define POPUP_X         ((LCD_HOR_RES - POPUP_W) / 2)
+#define POPUP_Y         ((LCD_VER_RES - POPUP_H) / 2)
+#define POPUP_TOTAL     9
 
 /* 按钮动画 */
 #define BTN_ANIM_MS 200
@@ -75,10 +111,13 @@ static volatile bool s_http_overflow;
  *  内部辅助
  * ================================================================ */
 
-static void refresh(void) { lv_refr_now(NULL); }
-
 static const char* btn_name(int idx) {
-    return (idx == 0) ? "Refresh" : "Back";
+    switch (idx) {
+        case 0: return "City";
+        case 1: return "Refresh";
+        case 2: return "Back";
+        default: return "?";
+    }
 }
 
 /* ================================================================
@@ -197,71 +236,150 @@ static int http_chunk_handler(esp_http_client_event_t *evt) {
 }
 
 /* ================================================================
+ *  城市选择弹窗 —— 内部辅助
+ * ================================================================ */
+
+static void popup_apply_highlight(int idx) {
+    if (!s_popup_scroller) return;
+
+    /* 文字颜色切换 */
+    for (int i = 0; i < POPUP_TOTAL; i++) {
+        if (!s_popup_items[i]) continue;
+        lv_obj_t *lbl = lv_obj_get_child(s_popup_items[i], 0);
+        if (lbl) {
+            lv_obj_set_style_text_color(lbl,
+                (i == idx) ? lv_color_hex(0x4FC3F7) : lv_color_hex(0xCCCCCC), 0);
+        }
+        lv_obj_set_style_bg_opa(s_popup_items[i],
+            (i == idx) ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_bg_color(s_popup_items[i], lv_color_hex(0x4FC3F7), 0);
+    }
+
+    /* 滚动偏移：让选中项保持在可视区中间 */
+    int ideal = -(idx - VISIBLE_ITEMS / 2) * ITEM_STEP;
+    int max_y = 0;
+    int min_y = -(POPUP_TOTAL - VISIBLE_ITEMS) * ITEM_STEP;
+    if (ideal > max_y) ideal = max_y;
+    if (ideal < min_y) ideal = min_y;
+    lv_obj_set_y(s_popup_scroller, ideal);
+
+    /* 高亮游标 */
+    int cur_y = ideal + idx * ITEM_STEP;
+    lv_obj_set_y(s_popup_cursor, cur_y - 2);
+}
+
+static void popup_destroy(void) {
+    if (s_popup_overlay) {
+        lv_obj_delete(s_popup_overlay);
+        s_popup_overlay = NULL;
+    }
+    s_popup_scroller = NULL;
+    s_popup_cursor   = NULL;
+    for (int i = 0; i < POPUP_TOTAL; i++) s_popup_items[i] = NULL;
+}
+
+static void popup_create(void) {
+    if (!s_page || !s_page->container) return;
+
+    /* 半透明遮罩 */
+    s_popup_overlay = lv_obj_create(s_page->container);
+    lv_obj_set_size(s_popup_overlay, LCD_HOR_RES, LCD_VER_RES);
+    lv_obj_set_pos(s_popup_overlay, 0, 0);
+    lv_obj_set_style_bg_color(s_popup_overlay, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(s_popup_overlay, LV_OPA_50, 0);
+    lv_obj_set_style_border_width(s_popup_overlay, 0, 0);
+    lv_obj_set_style_pad_all(s_popup_overlay, 0, 0);
+    lv_obj_add_flag(s_popup_overlay, LV_OBJ_FLAG_CLICKABLE);
+
+    /* 弹窗容器 */
+    lv_obj_t *box = lv_obj_create(s_popup_overlay);
+    lv_obj_set_size(box, POPUP_W, POPUP_H);
+    lv_obj_set_pos(box, POPUP_X, POPUP_Y);
+    lv_obj_set_style_bg_color(box, lv_color_hex(0x1a1a2e), 0);
+    lv_obj_set_style_border_color(box, lv_color_hex(0x4FC3F7), 0);
+    lv_obj_set_style_border_width(box, 2, 0);
+    lv_obj_set_style_border_opa(box, LV_OPA_60, 0);
+    lv_obj_set_style_radius(box, 12, 0);
+    lv_obj_set_style_pad_all(box, 0, 0);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* 标题 */
+    lv_obj_t *title = lv_label_create(box);
+    lv_label_set_text(title, "Select City");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(0x4FC3F7), 0);
+    lv_obj_set_style_border_width(title, 0, 0);
+    lv_obj_set_style_bg_opa(title, LV_OPA_TRANSP, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 8);
+
+    /* 视口（clip 裁剪） */
+    lv_obj_t *vp = lv_obj_create(box);
+    lv_obj_set_size(vp, VP_W, VP_H);
+    lv_obj_set_style_bg_opa(vp, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(vp, 0, 0);
+    lv_obj_set_style_pad_all(vp, 0, 0);
+    lv_obj_set_style_clip_corner(vp, true, 0);
+    lv_obj_align(vp, LV_ALIGN_TOP_MID, 0, 34);
+
+    /* 滚动容器 */
+    int sc_h = POPUP_TOTAL * ITEM_STEP;
+    s_popup_scroller = lv_obj_create(vp);
+    lv_obj_set_size(s_popup_scroller, VP_W, sc_h);
+    lv_obj_set_style_bg_opa(s_popup_scroller, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_popup_scroller, 0, 0);
+    lv_obj_set_style_pad_all(s_popup_scroller, 0, 0);
+
+    /* 城市 / Cancel 项 */
+    for (int i = 0; i < POPUP_TOTAL; i++) {
+        lv_obj_t *bg = lv_obj_create(s_popup_scroller);
+        lv_obj_set_size(bg, VP_W, ITEM_H);
+        lv_obj_set_style_bg_opa(bg, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(bg, 0, 0);
+        lv_obj_set_style_pad_all(bg, 0, 0);
+        lv_obj_set_style_radius(bg, 4, 0);
+        lv_obj_align(bg, LV_ALIGN_TOP_MID, 0, i * ITEM_STEP);
+
+        lv_obj_t *lbl = lv_label_create(bg);
+        const char *text = (i < CITY_COUNT) ? CITY_DISPLAY[i] : "Cancel";
+        lv_label_set_text(lbl, text);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(0xCCCCCC), 0);
+        lv_obj_set_style_border_width(lbl, 0, 0);
+        lv_obj_set_style_bg_opa(lbl, LV_OPA_TRANSP, 0);
+        lv_obj_center(lbl);
+
+        s_popup_items[i] = bg;
+    }
+
+    /* 高亮游标 */
+    s_popup_cursor = lv_obj_create(vp);
+    lv_obj_set_size(s_popup_cursor, VP_W + 4, ITEM_H + 4);
+    lv_obj_set_style_bg_opa(s_popup_cursor, LV_OPA_10, 0);
+    lv_obj_set_style_bg_color(s_popup_cursor, lv_color_hex(0x4FC3F7), 0);
+    lv_obj_set_style_border_color(s_popup_cursor, lv_color_hex(0x4FC3F7), 0);
+    lv_obj_set_style_border_width(s_popup_cursor, 2, 0);
+    lv_obj_set_style_border_opa(s_popup_cursor, LV_OPA_80, 0);
+    lv_obj_set_style_radius(s_popup_cursor, 6, 0);
+    lv_obj_set_pos(s_popup_cursor, -3, -2);
+}
+
+/* ================================================================
  *  发起 HTTP 请求（在 logic_task 上下文调用）
- *
- *  两步走：
- *    1. IP2Location.io  → 根据公网 IP 获取城市名
- *    2. 心知天气 API       → 用城市名查天气
- *    第 1 步失败时回退到 WEATHER_API_LOCATION
+ *  直接使用用户选择的城市查心知天气 API
  * ================================================================ */
 
 static void weather_do_fetch(void) {
     s_fetching = true;
 
-    /* ---- 第 1 步：IP2Location.io 获取城市 ---- */
-    char location_buf[32] = {0};
+    const char *city = CITY_LIST[s_city_index];
+    ESP_LOGI(TAG, "fetching weather for: %s", city);
 
-    s_http_buf_len  = 0;
-    s_http_overflow = false;
-
-    char geo_url[128];
-    snprintf(geo_url, sizeof(geo_url),
-             "http://api.ip2location.io/?key=%s&format=json",
-             IP2LOCATION_API_KEY);
-
-    esp_http_client_config_t geo_cfg = {
-        .url           = geo_url,
-        .timeout_ms    = 5000,
-        .buffer_size   = 512,
-        .event_handler = http_chunk_handler,
-    };
-    esp_http_client_handle_t geo_client = esp_http_client_init(&geo_cfg);
-    if (geo_client) {
-        esp_err_t geo_err = esp_http_client_perform(geo_client);
-        int geo_status = (geo_err == ESP_OK)
-                         ? esp_http_client_get_status_code(geo_client) : 0;
-        esp_http_client_cleanup(geo_client);
-
-        if (geo_err == ESP_OK && geo_status == 200 && s_http_buf_len > 0) {
-            cJSON *root = cJSON_Parse(s_http_buf);
-            if (root) {
-                cJSON *city = cJSON_GetObjectItem(root, "city_name");
-                if (city && cJSON_IsString(city) && city->valuestring[0]) {
-                    strncpy(location_buf, city->valuestring,
-                            sizeof(location_buf) - 1);
-                    ESP_LOGI(TAG, "location: %s", location_buf);
-                }
-                cJSON_Delete(root);
-            }
-        } else {
-            ESP_LOGW(TAG, "geo lookup failed (err=%d status=%d)",
-                     geo_err, geo_status);
-        }
-    }
-
-    if (location_buf[0] == '\0') {
-        strncpy(location_buf, WEATHER_API_LOCATION,
-                sizeof(location_buf) - 1);
-        ESP_LOGI(TAG, "using fallback location: %s", location_buf);
-    }
-
-    /* ---- 第 2 步：心知天气 API ---- */
     s_http_buf_len  = 0;
     s_http_overflow = false;
 
     char url[512];
     snprintf(url, sizeof(url), WEATHER_API_URL_FMT,
-             WEATHER_API_KEY, location_buf);
+             WEATHER_API_KEY, city);
 
     esp_http_client_config_t cfg = {
         .url               = url,
@@ -319,9 +437,11 @@ static void weather_update_ui(void) {
         if (s_desc_label)   lv_label_set_text(s_desc_label, "");
         if (s_status_label) lv_label_set_text(s_status_label, "Not Connected");
     } else if (s_fetching) {
+        if (s_city_label)   lv_label_set_text(s_city_label, CITY_LIST[s_city_index]);
         if (s_temp_label)   lv_label_set_text(s_temp_label, "...");
         if (s_status_label) lv_label_set_text(s_status_label, "Loading...");
     } else if (!s_has_data) {
+        if (s_city_label)   lv_label_set_text(s_city_label, CITY_LIST[s_city_index]);
         if (s_temp_label)   lv_label_set_text(s_temp_label, "--C");
         if (s_status_label) lv_label_set_text(s_status_label, "No Data");
     } else {
@@ -338,7 +458,7 @@ static void weather_update_ui(void) {
             lv_label_set_text(s_status_label, stale ? "(outdated)" : "");
         }
     }
-    refresh();
+    lv_refr_now(NULL);
 }
 
 static void weather_update_btn_label(void) {
@@ -353,6 +473,40 @@ static void weather_update_btn_label(void) {
 static int64_t s_last_tilt_us = 0;
 
 static void weather_input_cb(imu_tilt_dir_t tilt, int8_t rotary, bool btn_short) {
+    /* ---- 城市选择弹窗模式 ---- */
+    if (s_city_select) {
+        if (btn_short) {
+            s_btn_pending = true;
+            return;
+        }
+        if (rotary != 0) {
+            int64_t now = esp_timer_get_time();
+            if (now - s_city_tilt_last_us < 250000UL) return;
+            s_city_tilt_last_us = now;
+            int old = s_city_sel_idx;
+            if (rotary > 0)
+                s_city_sel_idx = (s_city_sel_idx + 1) % POPUP_TOTAL;
+            else
+                s_city_sel_idx = (s_city_sel_idx + POPUP_TOTAL - 1) % POPUP_TOTAL;
+            if (s_city_sel_idx != old) s_popup_dirty = true;
+            return;
+        }
+        if (tilt == IMU_TILT_FRONT || tilt == IMU_TILT_BACK) {
+            int64_t now = esp_timer_get_time();
+            if (now - s_city_tilt_last_us < 250000UL) return;
+            s_city_tilt_last_us = now;
+            int old = s_city_sel_idx;
+            if (tilt == IMU_TILT_FRONT)
+                s_city_sel_idx = (s_city_sel_idx + 1) % POPUP_TOTAL;
+            else
+                s_city_sel_idx = (s_city_sel_idx + POPUP_TOTAL - 1) % POPUP_TOTAL;
+            if (s_city_sel_idx != old) s_popup_dirty = true;
+            return;
+        }
+        return;
+    }
+
+    /* ---- 正常模式 ---- */
     if (btn_short) {
         s_btn_pending = true;
         return;
@@ -365,9 +519,9 @@ static void weather_input_cb(imu_tilt_dir_t tilt, int8_t rotary, bool btn_short)
 
         int old = s_btn_index;
         if (rotary > 0)
-            s_btn_index = (s_btn_index + 1) % 2;
+            s_btn_index = (s_btn_index + 1) % BTN_COUNT;
         else
-            s_btn_index = (s_btn_index == 0) ? 1 : 0;
+            s_btn_index = (s_btn_index + BTN_COUNT - 1) % BTN_COUNT;
 
         if (s_btn_index != old) {
             s_btn_dir   = (rotary > 0) ? 1 : -1;
@@ -384,9 +538,9 @@ static void weather_input_cb(imu_tilt_dir_t tilt, int8_t rotary, bool btn_short)
 
     int old = s_btn_index;
     if (tilt == IMU_TILT_FRONT)
-        s_btn_index = (s_btn_index + 1) % 2;
+        s_btn_index = (s_btn_index + 1) % BTN_COUNT;
     else
-        s_btn_index = (s_btn_index == 0) ? 1 : 0;
+        s_btn_index = (s_btn_index + BTN_COUNT - 1) % BTN_COUNT;
 
     if (s_btn_index != old) {
         s_btn_dir   = (tilt == IMU_TILT_FRONT) ? 1 : -1;
@@ -407,6 +561,11 @@ static void on_container_delete(lv_event_t *e) {
     s_status_label = NULL;
     s_btn_label    = NULL;
     s_btn_bg       = NULL;
+    s_popup_overlay = NULL;
+    s_popup_scroller = NULL;
+    s_popup_cursor   = NULL;
+    for (int i = 0; i < POPUP_TOTAL; i++) s_popup_items[i] = NULL;
+    s_city_select = false;
     ESP_LOGI(TAG, "page destroyed");
 }
 
@@ -517,6 +676,7 @@ void weather_init(void) {
     s_btn_label    = NULL;
     s_btn_bg       = NULL;
     s_btn_index    = 0;
+    s_city_index   = WEATHER_DEFAULT_CITY;
     s_has_data     = false;
     s_fetching     = false;
 
@@ -527,6 +687,15 @@ void weather_init(void) {
     s_cb_override    = false;
     s_fetch_done     = false;
     s_fetch_ok       = false;
+
+    s_city_select      = false;
+    s_city_sel_idx     = 0;
+    s_popup_dirty      = false;
+    s_city_tilt_last_us = 0;
+    s_popup_overlay    = NULL;
+    s_popup_scroller   = NULL;
+    s_popup_cursor     = NULL;
+    for (int i = 0; i < POPUP_TOTAL; i++) s_popup_items[i] = NULL;
 
     menu_ui_register_creator(MENU_ITEM_WEATHER, weather_creator);
     ESP_LOGI(TAG, "init ok");
@@ -543,13 +712,51 @@ void weather_tick(uint32_t dt_ms) {
 }
 
 void weather_process_updates(void) {
+    /* ============================================================
+     *  城市选择弹窗处理（必须在按钮动画和正常按钮处理之前）
+     * ============================================================ */
+
+    /* Block 1：创建弹窗 */
+    if (s_city_select && !s_popup_overlay && s_page && s_page->container) {
+        popup_create();
+        popup_apply_highlight(s_city_sel_idx);
+        lv_refr_now(NULL);
+    }
+
+    /* Block 2：移动高亮 */
+    if (s_popup_overlay && s_popup_dirty) {
+        s_popup_dirty = false;
+        popup_apply_highlight(s_city_sel_idx);
+        lv_refr_now(NULL);
+    }
+
+    /* Block 3：确认 / 取消 */
+    if (s_city_select && s_popup_overlay && s_btn_pending) {
+        s_btn_pending = false;
+        int sel = s_city_sel_idx;
+        popup_destroy();
+        s_city_select = false;
+
+        if (sel < CITY_COUNT) {
+            /* 选择了城市 */
+            if (sel != s_city_index) {
+                s_city_index = sel;
+                s_has_data = false;
+                s_fetch_timer_ms = WEATHER_UPDATE_INTERVAL_MS;
+                s_ui_dirty = true;
+                ESP_LOGI(TAG, "city selected: %s", CITY_LIST[s_city_index]);
+            }
+        }
+        /* sel == CITY_COUNT (Cancel) → 什么都不做 */
+    }
+
     /* ---- 按钮切换动画 ---- */
     if (s_btn_anim.on) {
         int64_t elapsed = (esp_timer_get_time() - s_btn_anim.t0) / 1000;
         if (elapsed >= BTN_ANIM_MS) {
             lv_obj_set_x(s_btn_bg, BTN_CX);
             weather_update_btn_label();
-            refresh();
+            lv_refr_now(NULL);
             s_btn_anim.on = false;
         } else {
             int half = BTN_ANIM_MS / 2;
@@ -568,7 +775,7 @@ void weather_process_updates(void) {
                               : (-BTN_W + (BTN_CX + BTN_W) * e / 256);
             }
             lv_obj_set_x(s_btn_bg, x);
-            refresh();
+            lv_refr_now(NULL);
         }
     }
 
@@ -590,17 +797,23 @@ void weather_process_updates(void) {
         }
     }
 
-    /* 按钮按下 */
-    if (s_btn_pending) {
+    /* 按钮按下（弹窗模式下由 Block 3 处理） */
+    if (s_btn_pending && !s_city_select) {
         s_btn_pending = false;
         switch (s_btn_index) {
-        case 0: /* Refresh */
+        case 0: /* City — 弹出城市选择弹窗 */
+            s_city_select      = true;
+            s_city_sel_idx     = s_city_index;
+            s_popup_dirty      = false;
+            s_city_tilt_last_us = 0;
+            break;
+        case 1: /* Refresh */
             if (svc_wifi_is_connected() && !s_fetching) {
                 s_fetch_timer_ms = WEATHER_UPDATE_INTERVAL_MS;
                 s_ui_dirty = true;
             }
             break;
-        case 1: /* Back */
+        case 2: /* Back */
             menu_ui_go_back();
             return;
         }
