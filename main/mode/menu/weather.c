@@ -196,94 +196,72 @@ static int http_chunk_handler(esp_http_client_event_t *evt) {
     return ESP_OK;
 }
 
-/* ---- IP 查询专用缓冲和回调（ipify 返回纯文本 IP，不超 15 字节） ---- */
-static char s_ip_buf[16];
-static volatile int s_ip_buf_len;
-
-static int ip_fetch_handler(esp_http_client_event_t *evt) {
-    if (evt->event_id == HTTP_EVENT_ON_DATA) {
-        int remaining = (int)sizeof(s_ip_buf) - s_ip_buf_len - 1;
-        if (remaining > 0) {
-            int copy = (evt->data_len < remaining) ? evt->data_len : remaining;
-            memcpy(s_ip_buf + s_ip_buf_len, evt->data, copy);
-            s_ip_buf_len += copy;
-            s_ip_buf[s_ip_buf_len] = '\0';
-        }
-    }
-    return ESP_OK;
-}
-
 /* ================================================================
  *  发起 HTTP 请求（在 logic_task 上下文调用）
  *
  *  两步走：
- *    1. ipify.org   → 获取公网 IP（超时 5s）
- *    2. 心知天气 API → 用公网 IP 作为 location 查天气
- *    IP 获取失败时回退到 WEATHER_API_LOCATION
+ *    1. IP2Location.io  → 根据公网 IP 获取城市名
+ *    2. 心知天气 API       → 用城市名查天气
+ *    第 1 步失败时回退到 WEATHER_API_LOCATION
  * ================================================================ */
 
 static void weather_do_fetch(void) {
+    s_fetching = true;
+
+    /* ---- 第 1 步：IP2Location.io 获取城市 ---- */
+    char location_buf[32] = {0};
+
     s_http_buf_len  = 0;
     s_http_overflow = false;
-    s_fetching      = true;
 
-    /* ---- 第 1 步：查询公网 IP（多源回退） ---- */
-    const char *ip_urls[] = {
-        "http://ip.3322.net",
-        "http://icanhazip.com",
-        "http://ifconfig.me",
+    char geo_url[128];
+    snprintf(geo_url, sizeof(geo_url),
+             "http://api.ip2location.io/?key=%s&format=json",
+             IP2LOCATION_API_KEY);
+
+    esp_http_client_config_t geo_cfg = {
+        .url           = geo_url,
+        .timeout_ms    = 5000,
+        .buffer_size   = 512,
+        .event_handler = http_chunk_handler,
     };
-    bool ip_ok = false;
+    esp_http_client_handle_t geo_client = esp_http_client_init(&geo_cfg);
+    if (geo_client) {
+        esp_err_t geo_err = esp_http_client_perform(geo_client);
+        int geo_status = (geo_err == ESP_OK)
+                         ? esp_http_client_get_status_code(geo_client) : 0;
+        esp_http_client_cleanup(geo_client);
 
-    for (int i = 0; i < 3 && !ip_ok; i++) {
-        s_ip_buf_len = 0;
-        memset(s_ip_buf, 0, sizeof(s_ip_buf));
-
-        esp_http_client_config_t ip_cfg = {
-            .url               = ip_urls[i],
-            .timeout_ms        = 4000,
-            .buffer_size       = 256,
-            .event_handler     = ip_fetch_handler,
-        };
-        esp_http_client_handle_t ip_client = esp_http_client_init(&ip_cfg);
-        if (ip_client) {
-            esp_err_t ip_err = esp_http_client_perform(ip_client);
-            int ip_status = (ip_err == ESP_OK)
-                            ? esp_http_client_get_status_code(ip_client) : 0;
-            esp_http_client_cleanup(ip_client);
-
-            if (ip_err == ESP_OK && ip_status == 200 && s_ip_buf_len > 0) {
-                /* 去掉末尾的 \r \n 空格 */
-                while (s_ip_buf_len > 0) {
-                    char c = s_ip_buf[s_ip_buf_len - 1];
-                    if (c == '\r' || c == '\n' || c == ' ') {
-                        s_ip_buf[--s_ip_buf_len] = '\0';
-                    } else break;
+        if (geo_err == ESP_OK && geo_status == 200 && s_http_buf_len > 0) {
+            cJSON *root = cJSON_Parse(s_http_buf);
+            if (root) {
+                cJSON *city = cJSON_GetObjectItem(root, "city_name");
+                if (city && cJSON_IsString(city) && city->valuestring[0]) {
+                    strncpy(location_buf, city->valuestring,
+                            sizeof(location_buf) - 1);
+                    ESP_LOGI(TAG, "location: %s", location_buf);
                 }
-                if (s_ip_buf_len > 0) {
-                    ESP_LOGI(TAG, "public IP: %s", s_ip_buf);
-                    ip_ok = true;
-                }
-            } else {
-                ESP_LOGW(TAG, "IP src %d failed (err=%d status=%d)",
-                         i, ip_err, ip_status);
+                cJSON_Delete(root);
             }
         } else {
-            ESP_LOGW(TAG, "IP src %d client init failed", i);
+            ESP_LOGW(TAG, "geo lookup failed (err=%d status=%d)",
+                     geo_err, geo_status);
         }
     }
 
-    if (!ip_ok) {
-        ESP_LOGW(TAG, "all IP sources failed, use fallback");
-        s_ip_buf[0] = '\0';
+    if (location_buf[0] == '\0') {
+        strncpy(location_buf, WEATHER_API_LOCATION,
+                sizeof(location_buf) - 1);
+        ESP_LOGI(TAG, "using fallback location: %s", location_buf);
     }
 
-    /* ---- 第 2 步：用公网 IP（或回退位置）查天气 ---- */
-    const char *location = (s_ip_buf[0] != '\0') ? s_ip_buf
-                                                  : WEATHER_API_LOCATION;
+    /* ---- 第 2 步：心知天气 API ---- */
+    s_http_buf_len  = 0;
+    s_http_overflow = false;
+
     char url[512];
     snprintf(url, sizeof(url), WEATHER_API_URL_FMT,
-             WEATHER_API_KEY, location);
+             WEATHER_API_KEY, location_buf);
 
     esp_http_client_config_t cfg = {
         .url               = url,

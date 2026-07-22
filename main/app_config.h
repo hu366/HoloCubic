@@ -129,7 +129,8 @@ extern "C" {
  *     https://api.seniverse.com/v3/weather/now.json
  * ================================================================ */
 #define WEATHER_API_KEY     "SFCBDWLOzbVENJO-6"  // 心知天气 API 私钥（非公钥！公钥是给前端 JS 用的）
-#define WEATHER_API_LOCATION "guangzhou"           // 回退位置（公网 IP 检测失败时使用）
+#define IP2LOCATION_API_KEY  "8E921DAF152368E2C8831DBC2F41C1C9"  // IP2Location.io 免费 Key
+#define WEATHER_API_LOCATION "shenzhen"           // 回退位置（公网 IP 检测失败时使用）
 #define WEATHER_API_URL_FMT \
     "http://api.seniverse.com/v3/weather/now.json?key=%s&location=%s&language=en&unit=c"
 #define WEATHER_UPDATE_INTERVAL_MS  (30 * 60 * 1000)  // 30 分钟刷新一次（免费用户合理频率）
