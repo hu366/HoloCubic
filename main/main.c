@@ -60,15 +60,20 @@ static void lvgl_task(void *arg)
 {
     (void)arg;
 
-    /* ---- 默认加载 PET 页面 ---- */
-    pet_ui_init();
-    lv_screen_load(pet_ui_get_screen());
-    lv_refr_now(NULL);
-
-    /* ---- UI 状态追踪 ---- */
-    app_mode_t   last_mode    = MODE_PET;
+    /* ---- 根据 DEFAULT_STARTUP_MODE 加载初始页面 ---- */
+    app_mode_t   last_mode    = DEFAULT_STARTUP_MODE;
     menu_level_t last_level   = MENU_LEVEL_TOP;
     bool         menu_ui_active = false;
+
+    if (DEFAULT_STARTUP_MODE == MODE_MENU) {
+        menu_ui_init();
+        menu_ui_init_modules();
+        lv_screen_load(menu_ui_get_screen());
+        lv_refr_now(NULL);
+        menu_ui_active = true;
+    } else {
+        pet_ui_init();
+    }
 
     while (1) {
         app_mode_t cur_mode = mode_manager_get_mode();
@@ -82,8 +87,6 @@ static void lvgl_task(void *arg)
                     menu_ui_active = false;
                 }
                 pet_ui_init();
-                lv_screen_load(pet_ui_get_screen());
-                lv_refr_now(NULL);
                 printf("[MAIN] 切换到 PET 模式\n");
             } else {
                 /* 切换到 MENU 模式 */

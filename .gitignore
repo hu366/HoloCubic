@@ -78,4 +78,8 @@ Desktop.ini
 *.sln.docstates # Visual Studio
 *.md
 !README.md
+!/doc/*.md
 /pet_frames/
+/scripts/frames/
+/scripts/test/
+*.pdf

@@ -59,6 +59,23 @@ void pet_anim_init(void);
  */
 bool pet_anim_load(const pet_data_t *pet);
 
+/** 加载进度回调（loaded=已加载帧数, total=总帧数） */
+typedef void (*pet_load_progress_cb_t)(uint16_t loaded, uint16_t total);
+
+/**
+ * @brief 快速加载：只读中心帧（正视角），约 30ms 完成
+ *
+ * 用于启动时立即显示宠物，随后调用 pet_anim_load_remaining() 补全。
+ */
+bool pet_anim_load_quick(const pet_data_t *pet);
+
+/**
+ * @brief 补全剩余角度帧（在快速加载后调用）
+ *
+ * @param cb 进度回调，每加载 5 帧调用一次；传 NULL 跳过。
+ */
+bool pet_anim_load_remaining(const pet_data_t *pet, pet_load_progress_cb_t cb);
+
 /** 释放所有缓存帧数据 */
 void pet_anim_unload(void);
 

@@ -89,6 +89,63 @@ idf.py build
 idf.py -p COMx flash monitor
 ```
 
+## SD 卡资源准备
+
+### 宠物精灵帧
+
+用 Blender 将 3D 模型预渲染为精灵帧序列：
+
+```powershell
+blender --background --python scripts/render_frames.py
+```
+
+配置编辑 `scripts/render_frames.py` 顶部的 `CONFIG`：
+```python
+MODEL_PATH  = r"模型路径.glb"
+OUTPUT_DIR  = r"pet_frames/"
+SPRITE_SIZE = 128
+ANGLE_STEPS = 10   # 10×10=100 角度帧
+```
+
+PC 预览：
+```powershell
+python scripts/preview.py
+# 鼠标拖拽模拟 IMU 倾斜，空格播放/暂停动画
+```
+
+部署：把 `pet_frames/` 整个目录拷贝到 SD 卡根目录。
+
+帧格式：ARGB8565（3字节/像素），meta.txt 描述宽高帧数。
+
+### 动画看板视频
+
+将视频/GIF 转换为 240×240 RGB565 帧序列（需 FFmpeg + Pillow）：
+
+```bash
+# 单文件转换
+python scripts/video_to_frames.py video.mp4 -o frames/
+
+# GIF 转换（建议 8fps）
+python scripts/video_to_frames.py anim.gif -o frames/ -f 8
+
+# 批量转换文件夹
+python scripts/video_to_frames.py ./videos/ -o frames/
+
+# 超出70帧自动跳过（ESP32 PSRAM 限制），降帧率可容纳更长视频：
+python scripts/video_to_frames.py long.gif -o frames/ -f 6
+```
+
+部署：把 `frames/` 下各子目录放入 SD 卡 `/sdcard/animations/`：
+```
+/sdcard/animations/
+  demo/            # 目录名即为视频名
+    000.bin ...     # RGB565 帧
+    meta.txt        # "240 240 帧数 fps"
+  my_video/
+    000.bin ...
+    meta.txt
+```
+
 ## 开发规范
 
 - **不用 `lv_anim`**：手动 tick 驱动所有动画（避免 LVGL v9 task_wdt 问题）

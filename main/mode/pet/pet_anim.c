@@ -64,6 +64,11 @@ static uint16_t       s_height      = 0;
 static bool           s_dirty       = false;
 static uint16_t       s_cur_angle_idx = 0xFFFF; /* 当前角度帧索引 */
 
+/* ---- 渐进加载 ---- */
+static bool           s_loading_remaining = false;
+static uint16_t       s_load_next_idx = 0;
+static const char    *s_load_dir = NULL;
+
 /* ================================================================
  *  前向声明
  * ================================================================ */
@@ -182,6 +187,113 @@ bool pet_anim_load(const pet_data_t *pet)
     return true;
 }
 
+bool pet_anim_load_quick(const pet_data_t *pet)
+{
+    if (!pet) return false;
+
+    pet_anim_unload();
+
+    const char *dir = state_to_dir(pet->state);
+    if (!dir) { ESP_LOGE(TAG, "Unknown state %d", pet->state); return false; }
+
+    uint16_t w = 0, h = 0, a = 0, b = 0, c = 0;
+    if (!parse_meta(dir, &w, &h, &a, &b, &c)) {
+        ESP_LOGE(TAG, "Failed to parse meta.txt in %s", dir);
+        return false;
+    }
+
+    s_width  = w;
+    s_height = h;
+    s_loaded_state = pet->state;
+
+    memset(&s_img_dsc, 0, sizeof(s_img_dsc));
+    s_img_dsc.header.magic  = LV_IMAGE_HEADER_MAGIC;
+    s_img_dsc.header.cf     = LV_COLOR_FORMAT_RGB565;
+    s_img_dsc.header.w      = w;
+    s_img_dsc.header.h      = h;
+    s_img_dsc.header.stride = w * 2;
+    s_img_dsc.data          = NULL;
+    s_img_dsc.data_size     = (uint32_t)w * h * 2;
+
+    if (b > 0 && c == 0) {
+        /* 角度映射：只加载中心帧 */
+        uint16_t total = a * b;
+        uint16_t center_idx = (a / 2) * b + (b / 2);
+
+        s_angle_frames = (frame_buf_t *)heap_caps_calloc(total, sizeof(frame_buf_t),
+                                                          MALLOC_CAP_SPIRAM);
+        if (!s_angle_frames) { ESP_LOGE(TAG, "PSRAM calloc %u failed", total); return false; }
+        s_angle_total = total;
+        s_angle_rows  = a;
+        s_angle_cols  = b;
+
+        if (!read_frame_file(dir, center_idx, &s_angle_frames[center_idx])) {
+            ESP_LOGE(TAG, "Load center frame failed");
+            free_angle_frames();
+            return false;
+        }
+
+        s_mode           = MODE_ANGLE;
+        s_cur_angle_idx  = center_idx;
+        s_img_dsc.data   = s_angle_frames[center_idx].data;
+        s_img_dsc.data_size = s_angle_frames[center_idx].size;
+        s_dirty          = true;
+
+        ESP_LOGI(TAG, "Quick load: center frame %u/%u ready", center_idx, total);
+    } else {
+        /* 时序模式：和完整加载一样 */
+        if (!load_seq_meta(dir)) return false;
+        s_mode      = MODE_SEQUENTIAL;
+        s_seq_total = a;
+        s_seq_index = 0;
+        s_seq_timer = 0;
+        s_seq_active = 0;
+
+        if (!read_frame_file(dir, 0, &s_seq_buf[0])) {
+            ESP_LOGE(TAG, "Failed to read frame 0");
+            return false;
+        }
+        s_img_dsc.data      = s_seq_buf[0].data;
+        s_img_dsc.data_size = s_seq_buf[0].size;
+        s_dirty = true;
+
+        if (s_seq_total > 1) {
+            if (read_frame_file(dir, 1, &s_seq_buf[1])) {
+                s_seq_active = 0;
+            }
+        }
+        ESP_LOGI(TAG, "Sequential mode: %u frames", s_seq_total);
+    }
+
+    return true;
+}
+
+bool pet_anim_load_remaining(const pet_data_t *pet, pet_load_progress_cb_t cb)
+{
+    if (s_mode != MODE_ANGLE || !s_angle_frames) return true;
+
+    const char *dir = state_to_dir(pet->state);
+    if (!dir) return false;
+
+    uint16_t loaded = 1; /* 中心帧已加载 */
+    for (uint16_t i = 0; i < s_angle_total; i++) {
+        if (s_angle_frames[i].data) continue;
+
+        if (!read_frame_file(dir, i, &s_angle_frames[i])) {
+            ESP_LOGE(TAG, "Load remaining frame %u/%u failed", i + 1, s_angle_total);
+        }
+        loaded++;
+
+        /* 每5帧回调一次，让 UI 刷新加载动画 */
+        if (cb && (loaded % 5 == 0)) {
+            cb(loaded, s_angle_total);
+        }
+    }
+
+    ESP_LOGI(TAG, "All %u angle frames loaded", s_angle_total);
+    return true;
+}
+
 void pet_anim_unload(void)
 {
     s_mode = MODE_NONE;
@@ -194,6 +306,9 @@ void pet_anim_unload(void)
     s_cur_angle_idx = 0xFFFF;
     s_seq_index    = 0;
     s_seq_timer    = 0;
+    s_loading_remaining = false;
+    s_load_next_idx = 0;
+    s_load_dir = NULL;
 }
 
 pet_anim_event_t pet_anim_tick(pet_data_t *pet,
@@ -204,7 +319,7 @@ pet_anim_event_t pet_anim_tick(pet_data_t *pet,
     if (s_mode == MODE_ANGLE) {
         /* ---- 角度映射：根据 pitch/roll 选帧 ---- */
         uint16_t idx = angle_to_index(pitch_deg, roll_deg);
-        if (idx != s_cur_angle_idx) {
+        if (idx != s_cur_angle_idx && s_angle_frames[idx].data) {
             s_cur_angle_idx = idx;
             s_img_dsc.data = s_angle_frames[idx].data;
             s_img_dsc.data_size = s_angle_frames[idx].size;

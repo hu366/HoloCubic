@@ -10,6 +10,7 @@
 #include "mode_manager.h"
 #include "menu/menu_engine.h"
 #include "pet/pet_ui.h"
+#include "app_config.h"
 
 /* ----------------------------------------------------------------
  *  内部状态
@@ -26,31 +27,15 @@ static const char *mode_str(app_mode_t m)
     return (m == MODE_PET) ? "PET" : "MENU";
 }
 
-static const char *tilt_str(imu_tilt_dir_t d)
-{
-    switch (d) {
-    case IMU_TILT_FRONT: return "前倾";
-    case IMU_TILT_BACK:  return "后倾";
-    case IMU_TILT_LEFT:  return "左倾";
-    case IMU_TILT_RIGHT: return "右倾";
-    default:             return "水平";
-    }
-}
-
-static const char *shake_str(imu_shake_dir_t d)
-{
-    return (d == IMU_SHAKE_LEFT) ? "左甩" : "右甩";
-}
-
 /* ================================================================
  *  公开接口
  * ================================================================ */
 
 void mode_manager_init(void)
 {
-    s_current_mode = MODE_PET;   /* 默认进入 PET 模式 */
+    s_current_mode = DEFAULT_STARTUP_MODE;
     menu_engine_init();
-    printf("[MM] 初始化完成，当前模式: MENU\n");
+    printf("[MM] 初始化完成，当前模式: %s\n", mode_str(s_current_mode));
 }
 
 void mode_manager_on_rotary(int8_t step)

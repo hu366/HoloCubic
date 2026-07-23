@@ -82,19 +82,34 @@ static void panel_init(void)
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
 
-    /*
-     * 行列偏移：ST7789 原生 GRAM 为 240×320，本模组物理像素仅 240×240，
-     * 对应 GRAM 第 80~319 行（底部 240 行）。gap_y=80 使 RASET 偏移，
-     * 确保像素数据写入正确的 GRAM 区域。
-     */
-    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(s_panel, LCD_GAP_X, LCD_GAP_Y));
-
     /* ---- 颜色反转（ST7789 通常需要，须在开显示前设置） ---- */
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, true));
 
-    /* ---- 镜像翻转（全息棱镜适配） ---- */
+    /* ---- 镜像翻转 + 旋转（全息棱镜适配） ---- */
+#if LCD_ROTATION == 90
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, MIRROR_Y, !MIRROR_X));
+    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(s_panel, true));
+#elif LCD_ROTATION == 180
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, !MIRROR_X, !MIRROR_Y));
+    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(s_panel, false));
+#elif LCD_ROTATION == 270
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, !MIRROR_Y, MIRROR_X));
+    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(s_panel, true));
+#else
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, MIRROR_X, MIRROR_Y));
-    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(s_panel, false));   // 不交换 XY，竖屏
+    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(s_panel, false));
+#endif
+
+    /*
+     * 行列偏移：ST7789 原生 GRAM 240×320，本模组物理像素 240×240。
+     * 0° 时对应 GRAM 第 80~319 行（gap_y=80）；
+     * 90° 时 swap_xy 交换行列，gap_X/Y 也要互换。
+     */
+#if LCD_ROTATION == 90 || LCD_ROTATION == 270
+    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(s_panel, LCD_GAP_Y, LCD_GAP_X));
+#else
+    ESP_ERROR_CHECK(esp_lcd_panel_set_gap(s_panel, LCD_GAP_X, LCD_GAP_Y));
+#endif
 
     /* ---- 开显示（退出睡眠模式） ---- */
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
@@ -166,6 +181,18 @@ static void lvgl_display_init(void)
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
     ESP_LOGI(TAG, "LVGL display registered (partial render, dual PSRAM buffer)");
+
+    /* 立即清屏为蓝色，避免启动时显示复位前残影 */
+    {
+        uint32_t px_count = LCD_HOR_RES * LCD_VER_RES;
+        uint16_t *fb = (uint16_t *)s_draw_buf_1;
+        /* #001a33 → RGB565 0x00C6 → 预交换字节后写入 uint16_t 为 0xC600 */
+        for (uint32_t i = 0; i < px_count; i++) {
+            fb[i] = 0xC600;
+        }
+        esp_lcd_panel_draw_bitmap(s_panel, 0, 0, LCD_HOR_RES, LCD_VER_RES, fb);
+        ESP_LOGI(TAG, "Screen cleared to blue #001a33");
+    }
 }
 
 /* ================================================================

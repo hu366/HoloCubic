@@ -69,7 +69,7 @@ bool hal_sd_mount(void) {
             .sclk_io_num     = SD_PIN_SCLK,
             .quadwp_io_num   = -1,
             .quadhd_io_num   = -1,
-            .max_transfer_sz = 4092,   /* 4KB per DMA 传输 */
+            .max_transfer_sz = 65536,   /* 64KB: 减少 DMA 事务数，提升连续读取速度 */
         };
         ret = spi_bus_initialize(SD_SPI_HOST, &bus_cfg, SPI_DMA_CH_AUTO);
         if (ret != ESP_OK) {
