@@ -30,8 +30,7 @@
 #include "svc_sntp.h"
 #include "hal/hal_rtc.h"
 #include "hal/hal_sd.h"
-
-
+#include "mode/pet/pet_ui.h"
 
 /* ================================================================
  *  回调：编码器 → mode_manager
@@ -61,19 +60,15 @@ static void lvgl_task(void *arg)
 {
     (void)arg;
 
-    /* ---- PET 占位页面（延迟创建，切换 PET 模式时才生成） ---- */
-    lv_obj_t *pet_screen = NULL;
-
-    /* ---- 默认加载 MENU 页面（mode_manager 初始化为 MODE_MENU） ---- */
-    menu_ui_init();
-    menu_ui_init_modules();  /* 聚合初始化所有子模块（pomodoro 等） */
-    lv_screen_load(menu_ui_get_screen());
+    /* ---- 默认加载 PET 页面 ---- */
+    pet_ui_init();
+    lv_screen_load(pet_ui_get_screen());
     lv_refr_now(NULL);
 
     /* ---- UI 状态追踪 ---- */
-    app_mode_t   last_mode    = MODE_MENU;
+    app_mode_t   last_mode    = MODE_PET;
     menu_level_t last_level   = MENU_LEVEL_TOP;
-    bool         menu_ui_active = true;
+    bool         menu_ui_active = false;
 
     while (1) {
         app_mode_t cur_mode = mode_manager_get_mode();
@@ -86,20 +81,13 @@ static void lvgl_task(void *arg)
                     menu_ui_deinit();
                     menu_ui_active = false;
                 }
-                if (!pet_screen) {
-                    pet_screen = lv_obj_create(NULL);
-                    lv_obj_set_style_bg_color(pet_screen, lv_color_hex(0x001a33), 0);
-                    lv_obj_t *pl = lv_label_create(pet_screen);
-                    lv_label_set_text(pl, "PET");
-                    lv_obj_set_style_text_color(pl, lv_color_white(), 0);
-                    lv_obj_set_style_text_font(pl, &lv_font_montserrat_14, 0);
-                    lv_obj_center(pl);
-                }
-                lv_screen_load(pet_screen);
+                pet_ui_init();
+                lv_screen_load(pet_ui_get_screen());
                 lv_refr_now(NULL);
                 printf("[MAIN] 切换到 PET 模式\n");
             } else {
                 /* 切换到 MENU 模式 */
+                pet_ui_deinit();
                 menu_ui_init();
                 menu_ui_init_modules();  /* 重新注册所有子模块创建器 */
                 lv_screen_load(menu_ui_get_screen());
@@ -148,6 +136,11 @@ static void lvgl_task(void *arg)
         /* 处理子模块更新（番茄钟 tick 等，Core 0 安全） */
         if (cur_mode == MODE_MENU && menu_ui_active) {
             menu_ui_process_module_updates();
+        }
+
+        /* PET 模式：处理动画帧 + 位置 + 摇晃 */
+        if (cur_mode == MODE_PET) {
+            pet_ui_process(LVGL_TASK_PERIOD_MS);
         }
 
         /* LVGL 渲染一帧 */
@@ -282,17 +275,24 @@ void app_main(void)
     hal_touch_encoder_init(on_encoder_rotate, on_encoder_btn);
     printf("[INIT] hal_touch_encoder_init() done\n");
 
-    /* ---- 5. 服务层 ---- */
+    /* ---- 5. SD 卡 ---- */
+    if (hal_sd_mount()) {
+        printf("[INIT] hal_sd_mount() OK\n");
+    } else {
+        printf("[INIT] hal_sd_mount() FAILED (no card?)\n");
+    }
+
+    /* ---- 6. 服务层 ---- */
     svc_wifi_init();
     printf("[INIT] svc_wifi_init() done\n");
     hal_rtc_init();
     printf("[INIT] hal_rtc_init() done\n");
 
-    /* ---- 6. 模式管理器 ---- */
+    /* ---- 7. 模式管理器 ---- */
     mode_manager_init();
     printf("[INIT] mode_manager_init() done\n");
 
-    /* ---- 7. 创建 FreeRTOS 任务 ---- */
+    /* ---- 8. 创建 FreeRTOS 任务 ---- */
     BaseType_t ret;
 
     ret = xTaskCreatePinnedToCore(lvgl_task,    "lvgl",    12288, NULL, 3, NULL, 0);

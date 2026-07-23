@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include "mode_manager.h"
 #include "menu/menu_engine.h"
+#include "pet/pet_ui.h"
 
 /* ----------------------------------------------------------------
  *  内部状态
@@ -47,7 +48,7 @@ static const char *shake_str(imu_shake_dir_t d)
 
 void mode_manager_init(void)
 {
-    s_current_mode = MODE_MENU;  /* 默认进入 MENU 模式（开发测试阶段） */
+    s_current_mode = MODE_PET;   /* 默认进入 PET 模式 */
     menu_engine_init();
     printf("[MM] 初始化完成，当前模式: MENU\n");
 }
@@ -82,16 +83,13 @@ void mode_manager_on_btn(bool short_press)
 
 void mode_manager_on_tilt(imu_angles_t angles, imu_tilt_dir_t dir)
 {
-    /* 方向没变就跳过，避免 50Hz 刷屏 */
-    if (dir == s_last_tilt_dir) return;
-    s_last_tilt_dir = dir;
-
     if (s_current_mode == MODE_MENU) {
+        if (dir == s_last_tilt_dir) return;
+        s_last_tilt_dir = dir;
         menu_engine_on_tilt(dir);
     } else {
-        printf("[MM] 收到: %s / 倾斜-%s, pitch=%+.1f° roll=%+.1f°\n",
-               mode_str(s_current_mode), tilt_str(dir),
-               angles.pitch, angles.roll);
+        /* PET 模式：每帧传连续角度，不跳 */
+        pet_ui_on_tilt(angles.pitch, angles.roll);
     }
 }
 
@@ -100,8 +98,7 @@ void mode_manager_on_shake(imu_shake_dir_t dir)
     /* MENU 模式不需要摇晃检测 */
     if (s_current_mode == MODE_MENU) return;
 
-    printf("[MM] 收到: %s / 摇晃-%s\n",
-           mode_str(s_current_mode), shake_str(dir));
+    pet_ui_on_shake();
 }
 
 void mode_manager_tick(uint32_t dt_ms)

@@ -17,8 +17,10 @@ idf_component_register(
         "mode/menu/menu_ui.c"
         # --- 宠物模式 ---
         "mode/pet/pet_engine.c"
-        # "mode/pet/pet_anim.c"
-        # "mode/pet/pet_ui.c"
+        "mode/pet/pet_anim.c"
+        "mode/pet/pet_motion.c"
+        "mode/pet/pet_shake.c"
+        "mode/pet/pet_ui.c"
         # --- 服务层 ---
         "service/svc_wifi.c"
         "service/svc_http.c"
