@@ -50,25 +50,7 @@ static bool        s_long_press_handled   = false;
 static void encoder_poll_cb(void *arg)
 {
     (void)arg;
-    /* ---------- 1. 读取 PCNT 计数值 ---------- */
-    int pulse_count = 0;
-    pcnt_unit_get_count(s_pcnt_unit, &pulse_count);
-
-    if (pulse_count != 0) {
-        pcnt_unit_clear_count(s_pcnt_unit);
-
-        if (s_rot_cb) {
-            /* 截断到 int8_t 范围（5ms 周期内足以覆盖任何旋转速度） */
-            if (pulse_count > 127) {
-                pulse_count = 127;
-            } else if (pulse_count < -128) {
-                pulse_count = -128;
-            }
-            s_rot_cb((int8_t)pulse_count);
-        }
-    }
-
-    /* ---------- 2. 按键去抖状态机 ---------- */
+    /* ---------- 1. 按键去抖状态机（先于旋钮：按键盘旋钮微转时不误选） ---------- */
     bool     btn_pressed = (gpio_get_level(ENCODER_PIN_BTN) == 0);  // 低电平有效
     uint32_t now_ms      = (uint32_t)(esp_timer_get_time() / 1000);
 
@@ -124,6 +106,24 @@ static void encoder_poll_cb(void *arg)
         break;
     }
     } /* switch */
+
+    /* ---------- 2. 读取 PCNT 计数值（按键处理之后，避免按键微转误触发） ---------- */
+    int pulse_count = 0;
+    pcnt_unit_get_count(s_pcnt_unit, &pulse_count);
+
+    if (pulse_count != 0) {
+        pcnt_unit_clear_count(s_pcnt_unit);
+
+        if (s_rot_cb) {
+            /* 截断到 int8_t 范围（5ms 周期内足以覆盖任何旋转速度） */
+            if (pulse_count > 127) {
+                pulse_count = 127;
+            } else if (pulse_count < -128) {
+                pulse_count = -128;
+            }
+            s_rot_cb((int8_t)pulse_count);
+        }
+    }
 }
 
 /* ================================================================

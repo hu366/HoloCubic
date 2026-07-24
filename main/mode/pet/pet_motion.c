@@ -81,7 +81,7 @@ void pet_motion_tick(pet_data_t *pet, float pitch_deg, float roll_deg, uint32_t 
     }
 
     float vx = tilt_to_velocity(roll_deg);   /* 横滚→左右 */
-    float vy = tilt_to_velocity(pitch_deg);  /* 俯仰→上下：前倾(+)=宠物上移 */
+    float vy = tilt_to_velocity(pitch_deg);  /* 俯仰→上下 */
 
     /* 精灵半宽（后续 pet_ui 设置 sprite 大小时用 PET_SPRITE_SIZE/2） */
     const int16_t half = 64;  /* 128px精灵 / 2，完整留在 240×240 屏内 */

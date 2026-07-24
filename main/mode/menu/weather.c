@@ -480,6 +480,7 @@ static void weather_input_cb(imu_tilt_dir_t tilt, int8_t rotary, bool btn_short)
             return;
         }
         if (rotary != 0) {
+            if (s_btn_pending) return;  /* 按键已触发→忽略同帧旋钮 */
             int64_t now = esp_timer_get_time();
             if (now - s_city_tilt_last_us < 250000UL) return;
             s_city_tilt_last_us = now;
@@ -492,6 +493,7 @@ static void weather_input_cb(imu_tilt_dir_t tilt, int8_t rotary, bool btn_short)
             return;
         }
         if (tilt == IMU_TILT_FRONT || tilt == IMU_TILT_BACK) {
+            if (s_btn_pending) return;  /* 按键已触发→忽略同帧倾斜 */
             int64_t now = esp_timer_get_time();
             if (now - s_city_tilt_last_us < 250000UL) return;
             s_city_tilt_last_us = now;
@@ -723,10 +725,12 @@ void weather_process_updates(void) {
         lv_refr_now(NULL);
     }
 
-    /* Block 2：移动高亮 */
+    /* Block 2：移动高亮（按键待处理时跳过，避免误移闪烁） */
     if (s_popup_overlay && s_popup_dirty) {
         s_popup_dirty = false;
-        popup_apply_highlight(s_city_sel_idx);
+        if (!s_btn_pending) {
+            popup_apply_highlight(s_city_sel_idx);
+        }
         lv_refr_now(NULL);
     }
 

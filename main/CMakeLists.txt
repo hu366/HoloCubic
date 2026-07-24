@@ -36,6 +36,7 @@ idf_component_register(
         "mode/menu/clock_alarm.c"
         "mode/menu/music_player.c"
         "mode/menu/animation_board.c"
+        "mode/menu/settings.c"
     INCLUDE_DIRS
         "."
         "hal"

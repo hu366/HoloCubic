@@ -32,6 +32,18 @@ void hal_display_init(void);
  */
 void hal_display_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map);
 
+/**
+ * @brief 运行时切换屏幕镜像
+ *
+ * @param mirrored  true=镜像开启, false=镜像关闭
+ */
+void hal_display_set_mirror(bool mirrored);
+
+/**
+ * @brief 查询当前镜像状态
+ */
+bool hal_display_is_mirrored(void);
+
 #ifdef __cplusplus
 }
 #endif

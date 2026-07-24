@@ -1646,3 +1646,111 @@ ESP32-S3 的 GPIO43/44 是 USB Serial/JTAG 引脚，不是普通 GPIO。直接 a
 ### 教训 5：字体方案要测试后才知道兼容性
 
 `lv_font_conv` 声称支持 LVGL v9，但 bpp=4 实际不渲染。用 bpp=1 最简单可靠，16px 下抗锯齿差异肉眼不可辨。
+
+---
+
+## ✅ Task 41/44 补充：MPU6050 轴重映射（X/Y 互换）
+
+### 需求
+"左改成前，右改成上"——物理左/右倾斜应映射为 pitch 轴（前/后），物理前/后倾斜应映射为 roll 轴（上/下）。
+
+### 改动
+
+| 文件 | 改动 |
+|------|------|
+| `hal_imu.c` | 姿态角计算：交换 ax/ay → pitch=atan2f(ay,...), roll=atan2f(ax,az) |
+| `hal_imu.c` | 倾斜方向判定：LEFT↔FRONT、RIGHT↔BACK 交换 |
+| `pet_motion.c` | 回退——vx/vy 保持原始映射（roll→vx, pitch→vy），反转后反而不对 |
+
+### 改动范围
+仅 `hal_imu.c` 两处，`pet_motion.c` 和 `pet_anim.c` 无需改动。
+
+---
+
+## ✅ 编码器轮询顺序修复 + Weather 弹窗短按失效
+
+### 问题
+Weather 城市选择弹窗里旋钮切换城市后短按"经常没反应，有时候一下就成功，有时候按好几次"。
+
+### 根因
+编码器按键时旋轴会微转产生 PCNT 脉冲。`encoder_poll_cb` 原顺序：先读旋钮 PCNT → 后处理按键去抖。导致 weather popup 先收到 rotary → 光标跳到 Cancel（或其他项）→ 再收到 button → 确认的不是用户高亮的项。
+
+### 修复
+
+| 文件 | 改动 |
+|------|------|
+| `hal_touch_encoder.c` | 交换处理顺序：按键去抖先于 PCNT 读取 |
+| `weather.c` | 弹窗 rotary/tilt handler 加 `if (s_btn_pending) return` 防护 |
+| `weather.c` | Block 2 高亮移动加 `if (!s_btn_pending)` 跳过 |
+
+### 原理
+按键释放先到 weather_input_cb → 设 `s_btn_pending = true` → 同帧旋钮脉冲检测到 `s_btn_pending` 已为真直接跳过 → Core 0 确认时使用正确的高亮位置。
+
+---
+
+## ✅ 设置页面 + 屏幕镜像运行时切换
+
+### 新增文件
+
+| 文件 | 职责 |
+|------|------|
+| `main/mode/menu/settings.c/h` | 设置页面：Mirror 切换按钮 + Back 按钮 |
+
+### 改动
+
+| 文件 | 改动 |
+|------|------|
+| `hal_display.h` | 新增 `hal_display_set_mirror(bool)` / `hal_display_is_mirrored()` |
+| `hal_display.c` | `s_mirrored` 状态（启动从 MIRROR_X 宏初始化），运行时调用 `esp_lcd_panel_mirror`+`esp_lcd_panel_set_gap`，然后 `lv_obj_invalidate`+`lv_refr_now` 全屏重绘 |
+| `menu_engine.h` | enum 新增 `MENU_ITEM_SETTINGS` |
+| `menu_engine.c` | 名称数组加 "设置" |
+| `menu_ui.c` | 注册 settings_init/tick/process_updates，名称加 "Settings" |
+| `CMakeLists.txt` | 添加 settings.c |
+
+### 镜像参数对照（LCD_ROTATION 270）
+
+| 状态 | mirror | gap | MIRROR_X | MIRROR_Y | GAP_Y |
+|------|--------|-----|----------|----------|-------|
+| ON（默认） | mirror(0, 1) | gap(80, 0) | 1 | 1 | 80 |
+| OFF | mirror(0, 0) | gap(0, 0) | 0 | 1 | 0 |
+
+### 运行时切换踩坑
+
+- **gap 参数位置反了**（第一版）：`set_gap(s_panel, 0, 80)` 而非 init 代码的 `set_gap(s_panel, 80, 0)`，导致 OFF→ON 时镜像切换回来画面错位有鬼影。
+- **用手动清 GRAM 破坏了 LVGL draw buffer**（第二版）：直接用 `s_draw_buf_1` 填背景色写 GRAM，导致 LVGL 后续 flush 数据错乱。正确的做法是仅 `lv_obj_invalidate(scr)` + `lv_refr_now()`，LVGL 自己会全屏重绘覆盖所有旧像素。
+
+---
+
+## ⚠️ 踩坑记录（MPU6050 重映射 + Weather 弹窗 + 镜像切换）
+
+### 坑 1：pet_motion.c 的 vx/vy 不该改
+
+轴交换后 vx/vy 也交换了，但 pet_ui.c 调用 `pet_motion_tick` 时参数已被 LCD_ROTATION 预处理过，传到 motion.c 的 pitch_deg/roll_deg 需要配合原始映射（vx=roll, vy=pitch）。改了反而左/右倾斜控制垂直、前/后控制水平。
+
+**教训：改底层 IMU 时不改上游调用者。上游已经用自己的坐标系（含旋转补偿），底层输出变了，上游自动适配。**
+
+### 坑 2：编码器按键伴随旋转脉冲
+
+EC11 旋钮按下时几乎所有情况下都会产生微小旋转脉冲。如果 encoder poll 先读旋钮再读按键，所有弹窗/列表的"选中→确认"流程都会受影响。
+
+**教训：编码器轮询顺序必须是「按键优先」。这个 bug 潜伏在所有使用旋转+短按确认的弹窗中——weather、music player volume、animation board 等。**
+
+### 坑 3：运行时改 panel mirror/gap 后必须保持一致性
+
+`esp_lcd_panel_set_gap` 的参数顺序必须和 `panel_init` 中的初始化调用完全一致，包括 swap_xy 后的 gap 互换逻辑。用 `MIRROR_X`/`LCD_GAP_Y` 宏而非魔法数字可防出错。
+
+---
+
+## ⚠️ 反思总结
+
+### 教训 1：改动底层前先画数据流图
+
+MPU6050 轴重映射改了 hal_imu.c → 自动影响 pet_motion/anim/ui/menu_engine 四层。不画数据流就改会让"改了 A 忘 B"反复发生。先梳理上下游调用链再动手。
+
+### 教训 2：硬件行为决定了软件设计顺序
+
+EC11 旋钮的物理特性（按键必伴随微转）决定了 encoder poll 必须是按键→旋钮的读取顺序。逆序会导致所有弹窗都潜在受影响。这个知识应该在框架搭建时就定下来。
+
+### 教训 3：运行时切换硬件配置不要动上层缓冲区
+
+改 ST7789 gap/mirror 时，试图手动清 GRAM 来防鬼影，结果踩了 LVGL draw buffer 的坑。运行时改硬件配置只需 invalidate + 让渲染引擎自己重绘。不要绕过框架自己操作缓冲区。

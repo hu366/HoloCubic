@@ -28,6 +28,7 @@ static const char *TAG = "hal_display";
 static esp_lcd_panel_io_handle_t s_io_handle  = NULL;
 static esp_lcd_panel_handle_t    s_panel      = NULL;
 static lv_display_t             *s_lv_display = NULL;
+static bool                      s_mirrored   = false;
 
 /* ---------- PSRAM 帧缓冲（双缓冲） ---------- */
 static uint8_t *s_draw_buf_1 = NULL;
@@ -203,6 +204,9 @@ void hal_display_init(void)
 {
     ESP_LOGI(TAG, "--- Display HAL init start ---");
 
+    /* 从编译期宏初始化镜像状态 */
+    s_mirrored = (MIRROR_X == 1);
+
     spi_bus_init();
     ESP_LOGI(TAG, "[1/4] SPI bus ready");
 
@@ -250,4 +254,37 @@ void hal_display_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px_ma
                               (const void *)px_map);
 
     lv_display_flush_ready(disp);
+}
+
+void hal_display_set_mirror(bool mirrored)
+{
+    if (!s_panel) return;
+    s_mirrored = mirrored;
+
+    /* 镜像参数：必须与 panel_init() 中的初始化顺序一致 */
+#if LCD_ROTATION == 270
+    esp_lcd_panel_mirror(s_panel, !MIRROR_Y, mirrored ? MIRROR_X : 0);
+    esp_lcd_panel_set_gap(s_panel, mirrored ? LCD_GAP_Y : 0, LCD_GAP_X);
+#elif LCD_ROTATION == 90
+    esp_lcd_panel_mirror(s_panel, MIRROR_Y, mirrored ? !MIRROR_X : 1);
+    esp_lcd_panel_set_gap(s_panel, mirrored ? LCD_GAP_Y : 0, LCD_GAP_X);
+#else
+    esp_lcd_panel_mirror(s_panel, mirrored ? MIRROR_X : 0, MIRROR_Y);
+    esp_lcd_panel_set_gap(s_panel, LCD_GAP_X, mirrored ? LCD_GAP_Y : 0);
+#endif
+
+    /* gap 变化导致 GRAM 映射偏移，旧坐标残留像素会形成鬼影。
+     * 强制 LVGL 全屏重绘覆盖整个可见区域即可。 */
+    if (s_lv_display) {
+        lv_obj_t *scr = lv_display_get_screen_active(s_lv_display);
+        if (scr) lv_obj_invalidate(scr);
+        lv_refr_now(s_lv_display);
+    }
+
+    ESP_LOGI(TAG, "Mirror %s", mirrored ? "ON" : "OFF");
+}
+
+bool hal_display_is_mirrored(void)
+{
+    return s_mirrored;
 }

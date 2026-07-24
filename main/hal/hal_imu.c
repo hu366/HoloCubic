@@ -142,10 +142,10 @@ imu_angles_t hal_imu_get_angles(void)
     s_last_ay = ay;
     s_last_az = az;
 
-    /* 姿态角 */
-    angles.pitch = atan2f(ax, sqrtf(ay * ay + az * az))
+    /* 姿态角（X/Y轴交换：左→前，右→上） */
+    angles.pitch = atan2f(ay, sqrtf(ax * ax + az * az))
                    * 180.0f / (float)M_PI;
-    angles.roll  = atan2f(ay, az) * 180.0f / (float)M_PI;
+    angles.roll  = atan2f(ax, az) * 180.0f / (float)M_PI;
 
     s_last_pitch = angles.pitch;
     s_last_roll  = angles.roll;
@@ -187,10 +187,11 @@ imu_tilt_dir_t hal_imu_get_tilt_dir(void)
     float t = IMU_TILT_THRESHOLD_DEG;
 
     imu_tilt_dir_t raw;
-    if      (r < -t) raw = IMU_TILT_FRONT;
-    else if (r >  t) raw = IMU_TILT_BACK;
-    else if (p >  t) raw = IMU_TILT_LEFT;
-    else if (p < -t) raw = IMU_TILT_RIGHT;
+    /* X/Y 轴交换后：r(X-based)→左/右，p(Y-based)→前/后 */
+    if      (r < -t) raw = IMU_TILT_LEFT;
+    else if (r >  t) raw = IMU_TILT_RIGHT;
+    else if (p >  t) raw = IMU_TILT_FRONT;
+    else if (p < -t) raw = IMU_TILT_BACK;
     else             raw = IMU_TILT_LEVEL;
 
     /* 去抖：方向必须连续 3 帧不变（60ms @ 50Hz）才算有效。

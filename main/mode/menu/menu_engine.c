@@ -22,7 +22,7 @@ static bool              s_rotary_force   = false;
 enum { INPUT_TILT, INPUT_ROTARY };
 
 static const char* s_item_names[MENU_ITEM_COUNT] = {
-    "番茄钟", "天气", "时钟", "音乐", "动画看板",
+    "番茄钟", "天气", "时钟", "音乐", "动画看板", "设置",
 };
 
 static bool scroll_cooldown_ok(void) {

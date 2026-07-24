@@ -25,6 +25,7 @@ typedef enum {
     MENU_ITEM_CLOCK,
     MENU_ITEM_MUSIC,
     MENU_ITEM_ANIMATION,
+    MENU_ITEM_SETTINGS,
     MENU_ITEM_COUNT
 } menu_item_t;
 
