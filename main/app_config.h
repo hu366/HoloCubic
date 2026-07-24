@@ -62,15 +62,14 @@ extern "C" {
 #define IMU_TILT_THRESHOLD_DEG  45.0f   // 倾斜判定阈值（度）
 
 /* ================================================================
- *  4. 音频 (DFPlayer Mini, UART)
+ *  4. 音频 (MP3-TF-16P / YX5200, UART1)
  * ================================================================ */
-#define DFP_UART_PORT       UART_NUM_1
-#define DFP_PIN_TX          17
-#define DFP_PIN_RX          18
-#define DFP_UART_BAUDRATE   9600
-#define DFP_VOLUME_MAX      30
-#define DFP_VOLUME_DEFAULT  15
-#define DFP_CMD_RETRY_MAX   3
+#define AUDIO_UART_PORT       UART_NUM_1
+#define AUDIO_PIN_TX          43
+#define AUDIO_PIN_RX          44
+#define AUDIO_UART_BAUDRATE   9600
+#define AUDIO_VOLUME_MAX      30
+#define AUDIO_VOLUME_DEFAULT  15
 
 /* ================================================================
  *  5. SD 卡 (SPI3)

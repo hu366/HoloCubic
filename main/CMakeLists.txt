@@ -6,7 +6,7 @@ idf_component_register(
         "hal/hal_touch_encoder.c"
         "hal/hal_imu.c"
         "hal/hal_display.c"
-        # "hal/hal_audio.c"
+        "hal/hal_audio.c"
         "hal/hal_sd.c"
         # "hal/hal_battery.c"
         "hal/hal_rtc.c"
@@ -28,15 +28,18 @@ idf_component_register(
         # "service/svc_persistence.c"
         # "service/svc_volume.c"
         # "service/svc_power.c"
+        # --- 内置资源 ---
+        "assets/font_noto_16.c"
         # --- 菜单子模块 ---
         "mode/menu/pomodoro.c"
         "mode/menu/weather.c"
         "mode/menu/clock_alarm.c"
-        # "mode/menu/music_player.c"
+        "mode/menu/music_player.c"
         "mode/menu/animation_board.c"
     INCLUDE_DIRS
         "."
         "hal"
+        "assets"
         "mode"
         "mode/menu"
         "mode/pet"
@@ -47,6 +50,7 @@ idf_component_register(
         esp_driver_i2c
         esp_driver_spi
         esp_driver_sdspi
+        esp_driver_uart
         esp_driver_ledc
         esp_lcd
         esp_timer

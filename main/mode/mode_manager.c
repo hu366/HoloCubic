@@ -51,14 +51,20 @@ void mode_manager_on_rotary(int8_t step)
 void mode_manager_on_btn(bool short_press)
 {
     if (!short_press) {
-        /* 长按 → 切换模式 */
-        s_current_mode = (s_current_mode == MODE_PET) ? MODE_MENU : MODE_PET;
-        s_last_tilt_dir = (imu_tilt_dir_t)-1;
-        if (s_current_mode == MODE_MENU) {
-            menu_engine_init();   /* 进入 MENU 模式时重置菜单状态 */
+        /* 长按：子页面内 → 返回；主页面 → 切换模式 */
+        if (s_current_mode == MODE_MENU
+            && menu_engine_get_level() == MENU_LEVEL_SUB) {
+            menu_engine_go_back();
+            printf("[MM] 收到: 按键-长按 → 子页面返回\n");
+        } else {
+            s_current_mode = (s_current_mode == MODE_PET) ? MODE_MENU : MODE_PET;
+            s_last_tilt_dir = (imu_tilt_dir_t)-1;
+            if (s_current_mode == MODE_MENU) {
+                menu_engine_init();
+            }
+            printf("[MM] 收到: 按键-长按 → 切换模式 → %s\n",
+                   mode_str(s_current_mode));
         }
-        printf("[MM] 收到: 按键-长按 → 切换模式 → %s\n",
-               mode_str(s_current_mode));
     } else if (s_current_mode == MODE_MENU) {
         menu_engine_on_btn(true);
     } else {

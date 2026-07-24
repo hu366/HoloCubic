@@ -30,6 +30,7 @@
 #include "svc_sntp.h"
 #include "hal/hal_rtc.h"
 #include "hal/hal_sd.h"
+#include "hal/hal_audio.h"
 #include "mode/pet/pet_ui.h"
 
 /* ================================================================
@@ -285,17 +286,21 @@ void app_main(void)
         printf("[INIT] hal_sd_mount() FAILED (no card?)\n");
     }
 
-    /* ---- 6. 服务层 ---- */
+    /* ---- 6. 音频 ---- */
+    hal_audio_init();
+    printf("[INIT] hal_audio_init() done\n");
+
+    /* ---- 7. 服务层 ---- */
     svc_wifi_init();
     printf("[INIT] svc_wifi_init() done\n");
     hal_rtc_init();
     printf("[INIT] hal_rtc_init() done\n");
 
-    /* ---- 7. 模式管理器 ---- */
+    /* ---- 8. 模式管理器 ---- */
     mode_manager_init();
     printf("[INIT] mode_manager_init() done\n");
 
-    /* ---- 8. 创建 FreeRTOS 任务 ---- */
+    /* ---- 9. 创建 FreeRTOS 任务 ---- */
     BaseType_t ret;
 
     ret = xTaskCreatePinnedToCore(lvgl_task,    "lvgl",    12288, NULL, 3, NULL, 0);

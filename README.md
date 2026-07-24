@@ -10,7 +10,7 @@
 | 屏幕 | ST7789 1.54" 240×240 (N154-2424KBWPG05-H12) |
 | IMU | MPU6050 (I2C, ±4g) |
 | 编码器 | EC11 旋转编码器 + 按键 |
-| 音频 | DFPlayer Mini |
+| 音频 | MP3-TF-16P (YX5200, UART1, GPIO43/44) |
 | SDK | ESP-IDF v6.0.2 |
 
 ## 功能
@@ -26,7 +26,7 @@
 | 番茄钟 | 自定义工作/休息时长，环形进度条，阶段切换提示 |
 | 天气 | WiFi 连接后获取天气，展示城市/温度/状况 |
 | 时钟闹钟 | SNTP 同步时间，多闹钟管理 |
-| 音乐播放器 | SD 卡 MP3 列表，DFPlayer 控制 |
+| 音乐播放器 | 文件浏览器选歌，MP3-TF-16P 播放，旋钮调音量 |
 | 动画看板 | SD 卡浏览动画序列循环播放 |
 
 ### 导航
@@ -46,14 +46,22 @@ project/
 │   ├── hal/                       # 硬件抽象层
 │   │   ├── hal_display.c/.h       # ST7789 SPI 显示
 │   │   ├── hal_touch_encoder.c/.h # EC11 编码器
-│   │   └── hal_imu.c/.h           # MPU6050 IMU
+│   │   ├── hal_imu.c/.h           # MPU6050 IMU
+│   │   ├── hal_audio.c/.h         # MP3-TF-16P UART 驱动
+│   │   └── hal_sd.c/.h            # SPI SD 卡 (FatFS)
 │   ├── mode/
 │   │   ├── mode_manager.c/.h      # 模式切换状态机
 │   │   └── menu/
 │   │       ├── menu_engine.c/.h   # 菜单导航 + 统一输入过滤
 │   │       ├── menu_ui.c/.h       # 菜单 UI + 栈式子页面 + 聚合初始化
-│   │       └── pomodoro.c/.h      # 番茄钟（环形进度条 + 单按钮轮播）
-│   └── service/                   # 服务层（待实现）
+│   │       ├── pomodoro.c/.h      # 番茄钟
+│   │       ├── weather.c/.h       # 天气
+│   │       ├── clock_alarm.c/.h   # 时钟闹钟
+│   │       ├── animation_board.c/.h # 动画看板
+│   │       └── music_player.c/.h  # 音乐播放器
+│   ├── assets/
+│   │   └── font_noto_16.c/.h      # 中文字库 (Noto Sans SC 16px)
+│   └── service/                   # 服务层（WiFi/HTTP/SNTP）
 ├── doc/                           # 设计文档
 └── sdcard_layout/                 # SD 卡布局说明
 ```
@@ -64,17 +72,16 @@ project/
 |------|------|
 | 阶段 0：工程骨架 | ✅ 完成 |
 | 阶段 1：HAL + 框架（M1） | ✅ 屏幕亮起，旋钮可切换模式 |
-| 阶段 2：菜单模式核心 | 🔄 进行中（番茄钟完成，Task 15-16） |
-| 阶段 3：宠物模式 | ⏳ 待开始 |
+| 阶段 2：菜单模式核心 | ✅ 完成（5 项功能全部验收） |
+| 阶段 3：宠物模式 | ✅ 完成（IMU 视角旋转 + 倾斜飘动 + 摇晃受惊） |
 | 阶段 4：边界处理 & 全息矫正 | ⏳ 待开始 |
 | 阶段 5：打磨验收 | ⏳ 待开始 |
 
-### 最新完成 (Task 15-16)
-- **番茄钟**：环形进度条（lv_arc）、MM:SS 倒计时、工作/休息阶段自动切换、底部单按钮轮播（滑动动画）、旋钮调节工作/休息分钟数、后台计时
-- **聚合初始化**：`menu_ui_init_modules()` / `menu_ui_tick_modules()` / `menu_ui_process_module_updates()` 统一入口，后续模块只加一行
-- **统一输入过滤**：`MENU_INPUT_MODE` 宏（0=倾斜 1=旋钮 2=两者），`input_allowed()` 运行时函数全局生效，番茄钟调节模式自动旁路旋钮
-- **倾斜去抖**：IMU 连续 3 帧（60ms）同方向才有效 + 迟滞回差（必须回正才能再触发），杜绝拍打误触和回正反冲
-- **公用缓动**：`menu_ui_ease_out()` 供所有模块动画使用
+### 最新完成 (Task 29~34)
+- **MP3-TF-16P 驱动**：YX5200 UART 协议，9600bps，校验和+查询响应
+- **音乐播放器**：文件树浏览器（从 music_map.txt）、文件夹进入/返回、播放暂停/上下曲/旋钮调音量弹窗、番茄钟风格 3 可见按钮滑动切换、长按退出不切模式
+- **中文字库**：Noto Sans SC 16px，292 中文 + ASCII，114KB
+- **音乐部署脚本**：`scripts/setup_music.py` 一键生成 MP3-TF-16P 卡和 ESP32 SD 卡映射文件
 
 ## 构建
 
@@ -90,6 +97,30 @@ idf.py -p COMx flash monitor
 ```
 
 ## SD 卡资源准备
+
+### 音乐播放器
+
+音乐需要同时部署到两张卡——MP3-TF-16P 的 TF 卡（存音频文件）和 ESP32 的 SPI SD 卡（存映射索引）：
+
+```bash
+# 1. 准备音乐目录（正常文件名）
+music/
+├── 周杰伦/
+│   ├── 晴天.mp3
+│   └── 稻香.mp3
+└── 孤勇者.mp3
+
+# 2. 运行脚本
+python scripts/setup_music.py music/
+
+# 3. 部署
+#    music/_mp3_output/*  → 复制到 MP3-TF-16P 的 TF 卡根目录
+#    music/music_map.txt  → 复制到 ESP32 SPI SD 卡根目录
+```
+
+脚本自动处理：文件夹→编号、文件名→编号前缀、生成映射表。
+
+**支持格式**：MP3、WAV（WMA 需定制模块固件）。
 
 ### 宠物精灵帧
 

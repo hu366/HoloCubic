@@ -17,6 +17,7 @@
 #include "weather.h"
 #include "clock_alarm.h"
 #include "animation_board.h"
+#include "music_player.h"
 
 /* ================================================================
  *  常量
@@ -544,12 +545,14 @@ void menu_ui_init_modules(void) {
     weather_init();
     clock_alarm_init();
     animation_board_init();
+    music_player_init();
 }
 
 void menu_ui_tick_modules(uint32_t dt_ms) {
     pomodoro_tick(dt_ms);
     weather_tick(dt_ms);
     clock_alarm_tick(dt_ms);
+    music_player_tick(dt_ms);
 }
 
 void menu_ui_process_module_updates(void) {
@@ -557,6 +560,7 @@ void menu_ui_process_module_updates(void) {
     weather_process_updates();
     clock_alarm_process_updates();
     animation_board_process_updates();
+    music_player_process_updates();
 }
 
 /* ================================================================
